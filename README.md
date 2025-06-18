@@ -85,9 +85,9 @@ licensed under the BSD 2-Clause License. See `inst/LICENSE.note` for details.
 
 ## Conatct
 
-Brad Broyles
-PhD Candidate, Computational and Structural Biology,
-Purdue University
+Brad Broyles  
+PhD Candidate, Computational and Structural Biology  
+Purdue University  
 bbroyle@purdue.edu
 
 ## Running multi-chain (heterodimer)
