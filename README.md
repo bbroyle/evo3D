@@ -1,9 +1,9 @@
 # evo3D
 <img src="man/figures/evo3d_hex_b.png" width="200"/>
 
-**evopatchr** is an R package for structure-aware population genetics, enabling patch-level evolutionary analysis of protein surfaces. It integrates selection metrics with 3D structural data to identify spatially clustered signals of diversity and selection.
+**evo3D** is an R package for structure-aware population genetics, enabling patch-level evolutionary analysis of protein surfaces. It integrates selection metrics with 3D structural data to identify spatially clustered signals of diversity and selection.
 
-Designed with applications in immunology, virology, and comparative genomics, `evo3D` supports multi-chain proteins, multi-model structures, and antibody–antigen complexes.
+`evo3D` supports multi-chain proteins, multi-structure model inputs, and direct assesment of protein-protein interfaces.
 
 ---
 
@@ -24,7 +24,7 @@ To install from GitHub:
 
 ```r
 # install.packages("devtools")
-devtools::install_github("bbroyle/evopatchr")
+devtools::install_github("bbroyle/evo3D")
 
 # msa and alignment functionalities require 'msa' from Bioconducter
 if (!requireNamespace("BiocManager", quietly = TRUE))
@@ -36,47 +36,42 @@ BiocManager::install("msa")
 ## Quick Example
 
 ```r
-library(evopatchr)
+library(evo3D)
 
-msa_path <- system.file("extdata", "rh5_pfalc.fasta", package = "evopatchr")
-pdb_path <- system.file("extdata", "rh5_4wat.pdb", package = "evopatchr")
+msa_path <- system.file("extdata", "rh5_pfalc.fasta", package = "evo3D")
+pdb_path <- system.file("extdata", "rh5_4wat.pdb", package = "evo3D")
 
-# run_patchr is designed for single msa and single pdb runs #
-result <- run_patchr_single(msa_path = msa_path,
-                             pdb_path = pdb_path,
-                             chain = 'A')
+# run_evo3D is designed for single analysis runs -- all input data will return with one results$evo3d_df results table #
+# chain = 'auto' by default or set to 'A' for this example #
+results <- run_evo3d(msa_path, pdb_path, chain = 'A') 
 
-write_stat_to_bfactor(result$selection_df,
-                      result$pdb_info$pdb,
-                      stat_name = "hap",
-                      outfile = "rh5_hap_div.pdb")
+write_stat_to_bfactor(results, stat_name = "hap", outfile = "rh5_hap_div.pdb")
 ```
 
-## Running step-wise (more control)
-### more examples of step-wise runs at end of README  
+## Running step-wise evo3D modules (more control)  
 
 ```r
-library(evopatchr)
+library(evo3D)
 
-# single MSA and PDB (or mmCIF) // essentially run_patchr_single() ----
-
-msa_path <- system.file("extdata", "rh5_pfalc.fasta", package = "evopatchr")
-pdb_path <- system.file("extdata", "rh5_4wat.pdb", package = "evopatchr")
+# we will use the same data as first example #
+msa_path <- system.file("extdata", "rh5_pfalc.fasta", package = "evo3D")
+pdb_path <- system.file("extdata", "rh5_4wat.pdb", package = "evo3D")
 
 # read in msa #
-msa_info <- WRAPPER_msa_to_ref(msa_path = msa_path)
+msa_info <- msa_to_ref(msa_path)
+
+# can run .auto_detect_chain(msa_info$pep, pdb_path) #
+# can also run .plot_chain_map(pdb_path) to see your protein in 2D with chain info #
 
 # read in pdb #
-pdb_info <- WRAPPER_pdb_to_patch(pdb_path = pdb_path,
-                                chain = c('A'))
+# pdb_to_patch() has no msa info so 'auto' chain is not valid (see above) #
+pdb_info <- pdb_to_patch(pdb_path = pdb_path, chain = 'A')
   
 # generate alignment between msa and pdb / and create msa_subsets #
-aln_info <- WRAPPER_align_msa_pdb(msa_info = msa_info,
-                                 pdb_info = pdb_info, 
-                                 chain = 'A', coverage_plot = T)
+aln_info <- aln_msa_to_pdb(msa_info, pdb_info, chain = 'A', coverage_plot = T)
   
 # calculate selection #
-selection_df <- run_pegas_three(aln_info$msa_subsets, pdb_info$residue_df)
+selection_df <- run_pegas_three(aln_info$msa_subsets, aln_info$aln_df)
 
 ```
 
@@ -85,7 +80,7 @@ selection_df <- run_pegas_three(aln_info$msa_subsets, pdb_info$residue_df)
 ## License
 
 This package is released under the MIT License.  
-Portions of the structural accessibility logic are adapted from the [DSSP project](https://github.com/PDB-REDO/dssp),  
+The structural solvent accessibility logic is adapted from the [DSSP project](https://github.com/PDB-REDO/dssp),  
 licensed under the BSD 2-Clause License. See `inst/LICENSE.note` for details.
 
 ## Conatct
@@ -98,87 +93,79 @@ bbroyle@purdue.edu
 ## Running multi-chain (heterodimer)
 
 ```r
-library(evopatchr)
+library(evo3D)
 
-msa_path1 <- system.file("extdata", "e1_hepc.aln", package = "evopatchr")
-msa_path2 <- system.file("extdata", "e2_hepc.aln", package = "evopatchr")
-pdb_path <- system.file("extdata", "e1e2_8fsj.pdb", package = "evopatchr")
+# two msa's for e1e2 complex #
+msa_path1 <- system.file("extdata", "e1_hepc.aln", package = "evo3D")
+msa_path2 <- system.file("extdata", "e2_hepc.aln", package = "evo3D")
+pdb_path <- system.file("extdata", "e1e2_8fsj.pdb", package = "evo3D")
 
-# read in two MSA #
-msa1 <- WRAPPER_msa_to_ref(msa_path = msa_path1)
-msa2 <- WRAPPER_msa_to_ref(msa_path = msa_path2)
+# FIRST WAY - use wrapper #
+results = run_evo3d(list(msa_path1, msa_path2), pdb_path) # 'auto' chain will handle mapping
 
-# read in pdb #
-pdb_info <- WRAPPER_pdb_to_patch(pdb_path = pdb_path,
-                                chain = c('A', 'E'))
+# SECOND WAY - by module #
+
+# process each MSA #
+msa_info1 <- msa_to_ref(msa_path1)
+msa_info2 <- msa_to_ref(msa_path2)
+
+# process 1 pdb #
+pdb_info <- pdb_to_patch(pdb_path, chain = c('A', 'E'))
 
 # each chain gets a alignment to msa #
-aln_info1 <- WRAPPER_align_msa_pdb(msa = msa1, 
-                                  pdb_info = pdb_info, 
-                                  chain = 'A')
+aln_info1 <- aln_msa_to_pdb(msa_info1, pdb_info, chain = 'A')
 
-aln_info2 <- WRAPPER_align_msa_pdb(msa = msa2,
-                                  pdb_info = pdb_info, 
-                                  chain = 'E')
+aln_info2 <- aln_msa_to_pdb(msa_info2, pdb_info, chain = 'E')
 
 # build cross chain msa subsets #
-msas <- extend_msa(aln_info1$msa_subsets, 
-                  aln_info2$msa_subsets)
+aln_info_combined <- extend_msa(aln_info1, aln_info2, list(msa_info1, msa_info2))
 
 # calculate selection #
-selection_df <- run_pegas_three(msas, pdb_info$residue_df)
+selection_df <- run_pegas_three(aln_info_combined$msa_subsets, aln_info_combined$aln_df)
 
 ```
 
 ## Running multi-chain (homotrimer)
 
 ```r
-library(evopatchr)
+library(evo3D)
 
-msa_path <- system.file("extdata", "spike_sarscov2.fa", package = "evopatchr")
-pdb_path <- system.file("extdata", "spike_7fb0.pdb", package = "evopatchr")
+msa_path <- system.file("extdata", "spike_sarscov2.fa", package = "evo3D")
+pdb_path <- system.file("extdata", "spike_7fb0.pdb", package = "evo3D")
+
+# FIRST WAY - with wrapper #
+# overload chain information #
+results = run_evo3d(msa_path, pdb_path, chain = 'ABC')
+
+# SECOND WAY - by modules #
 
 # read in one msa #
-msa1 <- WRAPPER_msa_to_ref(msa_path = msa_path)
+msa_info <- msa_to_ref(msa_path)
 
 # read in pdb ** note distance method set to 'ca' ~ faster (but not required) ** #
-pdb_info <- WRAPPER_pdb_to_patch(pdb_path = pdb_path,
-                                chain = c('A', 'B', 'C'),
-                                distance_method = 'ca')
+pdb_info <- pdb_to_patch(pdb_path, chain = c('A', 'B', 'C'), distance_method = 'ca')
 
 # each chain gets a alignment to msa #
-aln_info1 <- WRAPPER_align_msa_pdb(msa_info = msa1, 
-                                  pdb_info = pdb_info, 
-                                  chain = 'A')
-
-aln_info2 <- WRAPPER_align_msa_pdb(msa_info = msa1,
-                                  pdb_info = pdb_info, 
-                                  chain = 'B')
-
-aln_info3 <- WRAPPER_align_msa_pdb(msa_info = msa1,
-                                  pdb_info = pdb_info, 
-                                  chain = 'C')
+aln_info1 <- aln_msa_to_pdb(msa_info, pdb_info, chain = 'A')
+aln_info2 <- aln_msa_to_pdb(msa_info, pdb_info, chain = 'B')
+aln_info3 <- aln_msa_to_pdb(msa_info, pdb_info, chain = 'C')
 
 # build cross chain msa subsets #
-msas <- extend_msa(aln_info1$msa_subsets, 
-                  aln_info2$msa_subsets)
-
-msas <- extend_msa(msas,
-                  aln_info3$msa_subsets)
+aln_info_combined <- extend_pdb_homomultimer(list(aln_info1, aln_info2, aln_info3), msa_info)
   
 # calculate selection #
-selection_df <- run_pegas_three(msas, pdb_info$residue_df)
+selection_df <- run_pegas_three(aln_info_combined$msa_subsets, aln_info_combined$aln_df)
 
 ```
 
-## Running multi model (complementary resolved regions in PDB)
+## Running multi model (complementary resolved regions in PDB) -- change to Rh5 #
 
 ```r
-library(evopatchr)
+library(evo3D)
 
-msa_path <- system.file("extdata", "spike_sarscov2.fa", package = "evopatchr")
-pdb_path1 <- system.file("extdata", "spike_7fb0.pdb", package = "evopatchr")
-pdb_path2 <- system.file("extdata", "spike_7fb1.cif", package = "evopatchr")
+msa_path <- system.file("extdata", "spike_sarscov2.fa", package = "evo3D")
+pdb_path1 <- system.file("extdata", "spike_7fb0.pdb", package = "evo3D")
+pdb_path2 <- system.file("extdata", "spike_7fb1.cif", package = "evo3D")
 
 # read in MSA #
 msa_info <- WRAPPER_msa_to_ref(msa_path = msa_path)
@@ -214,10 +201,10 @@ selection_df <- run_pegas_three(msas)
 ## Running selection (including epitope) ** NEEDS WORK **
 
 ```r
-library(evopatchr)
+library(evo3D)
 
-msa_path <- system.file("extdata", "rh5_pfalc.fasta", package = "evopatchr")
-pdb_path <- system.file("extdata", "rh5_6rcu.pdb", package = "evopatchr")
+msa_path <- system.file("extdata", "rh5_pfalc.fasta", package = "evo3D")
+pdb_path <- system.file("extdata", "rh5_6rcu.pdb", package = "evo3D")
 
 # read in MSA #
 msa_info <- WRAPPER_msa_to_ref(msa_path = msa_path)
