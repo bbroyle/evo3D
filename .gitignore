@@ -1,0 +1,37 @@
+# R build and devtools output
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+.Rbuildignore
+.DS_Store
+.Rcheck/
+*.Rproj
+
+# Compiled code and build artifacts
+src/*.o
+src/*.so
+src/*.dll
+src/*.exe
+*.dSYM
+*.out
+*.log
+
+# Package build artifacts
+evo3D.Rcheck/
+evo3D_*.tar.gz
+
+# Rcpp-generated files (can be regenerated)
+src/RcppExports.cpp
+src/RcppExports.o
+R/RcppExports.R
+
+# Documentation build artifacts
+man/*.Rd
+NAMESPACE
+
+# Temporary files
+*.tmp
+*.swp
+*.bak
+*~
