@@ -8,7 +8,6 @@ Description: Provides a pipeline for structure-aware selection analysis of prote
     diversity and Tajima's D. Designed for easy use with experimental or predicted protein structures.
 License: MIT + file LICENSE
 Encoding: UTF-8
-LazyData: true
 RoxygenNote: 7.3.2
 LinkingTo: 
     Rcpp
