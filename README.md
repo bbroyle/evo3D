@@ -3,18 +3,17 @@
 
 **evo3D** is an R package for structure-aware population genetics, enabling patch-level evolutionary analysis of protein surfaces. It integrates selection metrics with 3D structural data to identify spatially clustered signals of diversity and selection.
 
-`evo3D` supports multi-chain proteins, multi-structure model inputs, and direct assesment of protein-protein interfaces.
-
 ---
 
 ## Key Features
 
-- Computes selection metrics (π, haplotype diversity, Tajima’s D) at surface-defined patches
-- Detects and integrates antibody epitopes from PDB structures
-- Supports multi-chain and multi-model PDBs for robust structural inference
-- Maps structure-defined residues to codon-aligned MSA windows
-- Generates B-factor-encoded PDBs and per-residue selection tables
-- Fully self-contained: no reliance on DSSP, MAFFT, or external alignment tools
+- Runs fully within R -- no need to link external dependencies
+- Maps structure-defined windows (including across mutli-chain complexes and protein-protein interfaces) to MSAs for patch-level MSA subsetting
+- Computes selection and diversity statistics (nucleotide diversity, haplotype diversity, Tajima’s D, etc.) or exports patch-level MSA subsets for downstream analysis
+- Includes tunable parameters for patch size, surface filtering, and more
+- Transparent workflow exposing internal MSA-to-PDB alignments for user inspection
+- Supports multiple structural models to improve MSA coverage
+- Optionally writes computed statistics to the B-factor column for PDB visualization
 
 ---
 
