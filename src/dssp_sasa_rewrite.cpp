@@ -353,9 +353,8 @@ Rcpp::NumericVector calculateDSSPAccessibility(
     }
     
     // Calculate surface accessibility for each residue
-    double totalSurface = 0.0;
     for (auto &res : allResidues) {
-        totalSurface += calculateResidueSurface(res, allResidues);
+        calculateResidueSurface(res, allResidues);
     }
     
     // Return results
