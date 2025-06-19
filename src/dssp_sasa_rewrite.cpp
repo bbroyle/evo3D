@@ -260,7 +260,6 @@ float calculateResidueSurface(Residue &res, const std::vector<Residue> &allResid
     return res.accessibility;
 }
 
-//' @export
 // [[Rcpp::export]]
 Rcpp::NumericVector calculateDSSPAccessibility(
     Rcpp::DataFrame atoms,

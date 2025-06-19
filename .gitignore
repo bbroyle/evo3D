@@ -21,10 +21,6 @@ src/*.exe
 evo3D.Rcheck/
 evo3D_*.tar.gz
 
-# Documentation build artifacts
-man/*.Rd
-NAMESPACE
-
 # Temporary files
 *.tmp
 *.swp
