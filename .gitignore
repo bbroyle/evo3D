@@ -21,11 +21,6 @@ src/*.exe
 evo3D.Rcheck/
 evo3D_*.tar.gz
 
-# Rcpp-generated files (can be regenerated)
-src/RcppExports.cpp
-src/RcppExports.o
-R/RcppExports.R
-
 # Documentation build artifacts
 man/*.Rd
 NAMESPACE
