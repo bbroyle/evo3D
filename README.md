@@ -23,14 +23,22 @@
 To install from GitHub:
 
 ```r
-# install.packages("devtools")
+# 1. Install evo3D (and devtools if you don’t have it)
+
+if (!requireNamespace("devtools", quietly = TRUE)) {
+  install.packages("devtools")
+}
 devtools::install_github("bbroyle/evo3D")
 
-# msa and alignment functionalities require 'msa' from Bioconducter
-if (!requireNamespace("BiocManager", quietly = TRUE))
-    install.packages("BiocManager")
+# 2. Install msa (necessary for msa to pdb alignments)
+# this package can take a while to install,
+# we may switch in future to DECIPHER or BioStrings
 
-BiocManager::install("msa")
+if (!requireNamespace("BiocManager", quietly = TRUE)) {
+  install.packages("BiocManager")
+}
+BiocManager::install("msa", update = FALSE)
+
 ```
 
 ## Quick Example
