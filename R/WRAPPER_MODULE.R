@@ -710,7 +710,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
 
   #5 saving/writing -- what to return ----
 
-  cat('STEP 5: Saving results...')
+  cat('STEP 5: Saving results...\n\n')
 
   if (write_patch_fastas){
 
@@ -728,8 +728,8 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   # msa (if available), codon, msa_subset_id, ref_aa, pdbX_aa, pdbY_aa, ..., pdbX_residue_id, pdbY_residue_id, codon_patch, everything else #
   codon_info =  intersect(c("msa","codon","msa_subset_id","ref_aa"), names(evo3d_df))
   aa_cols = grep("^pdb.*_aa$",          names(evo3d_df), value = TRUE)
-  id_cols = grep("^pdb.*_residue_id$",  names(evo3d_df), value = TRUE)
-  patch_col = intersect("codon_patch", names(df))
+  id_cols = grep(".*residue_id$",  names(evo3d_df), value = TRUE)
+  patch_col = "codon_patch"
   other = setdiff(names(df), c(codon_info, aa_cols, id_cols, patch_col))
   col_order = c(codon_info, aa_cols, id_cols, patch_col, other)
   evo3d_df = evo3d_df[, col_order, drop = FALSE]
