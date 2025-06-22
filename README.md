@@ -63,7 +63,7 @@ write_stat_to_bfactor(results, stat_name = "hap", outfile = "rh5_hap_div.pdb")
 
 ```
 
-Let's quikly cover run_evo3d() results. Results are in a structured list -- with the following entries:
+Let's quikly cover run_evo3d() results. Results are in a structured list -- with the following entries:\n
 $evo3d_df -- dataframe holding msa to pdb alignment information, 3D codon patch information, and calculated statistics
 $final_msa_subsets -- list of msa subsets named on codon at center of patch or interface id
 $msa_info_sets -- outputs of module 1 msa_to_ref()
