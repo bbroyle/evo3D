@@ -515,7 +515,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   rm(run_info, pdb_cache)
   invisible(gc())
 
-  #3 MODULE 3 align_msa_to_pdb ----
+  #3 MODULE 3 aln_msa_to_pdb ----
 
   cat('STEP 3: Aligning MSAs to PDBs...\n\n')
 
