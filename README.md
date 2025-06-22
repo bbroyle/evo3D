@@ -1,7 +1,7 @@
 # evo3D
 <img src="man/figures/evo3d_hex_b.png" width="200"/>
 
-**evo3D** is an R package for structure-aware population genetics, enabling patch-level evolutionary analysis of protein surfaces. It integrates selection metrics with 3D structural data to identify spatially clustered signals of diversity and selection.
+An R package for structure-aware population genetics, enabling selection and diversity analysis over sliding "patch" windows of protein surfaces (or structures in general). A wide range of analysis can be completed through the simple wrapper run_evo3d(), with the underlying modules ( msa_to_ref(), pdb_to_patch(), and aln_msa_to_pdb() ) also available for tailored use.
 
 ---
 
@@ -45,15 +45,49 @@ BiocManager::install("msa", update = FALSE)
 ```r
 library(evo3D)
 
-msa_path <- system.file("extdata", "rh5_pfalc.fasta", package = "evo3D")
-pdb_path <- system.file("extdata", "rh5_4wat.pdb", package = "evo3D")
+# getting file paths -- you can replace with your own data #
+msa_path = system.file("extdata", "rh5_pfalc.fasta", package = "evo3D")
+pdb_path = system.file("extdata", "rh5_6mpv.pdb", package = "evo3D")
 
-# run_evo3D is designed for single analysis runs -- all input data will return with one results$evo3d_df results table #
+# run_evo3D is designed for single analysis runs # --- for batch runs run_evo3D_batch will be provided soon #
 # chain = 'auto' by default or set to 'A' for this example #
-results <- run_evo3d(msa_path, pdb_path, chain = 'A') 
+results = run_evo3d(msa_path, pdb_path, chain = 'A') 
 
 write_stat_to_bfactor(results, stat_name = "hap", outfile = "rh5_hap_div.pdb")
 ```
+
+Let's quikly cover run_evo3d() results. Results are in a structured list -- with the following entries:
+$evo3d_df -- dataframe holding msa to pdb alignment information, 3D codon patch information, and calculated statistics
+$final_msa_subsets -- list of msa subsets named on codon at center of patch or interface id
+$msa_info_sets -- outputs of module 1 msa_to_ref()
+$pdb_info_sets -- outputs of module 2 pdb_to_patch()
+$aln_info_sets -- outputs of module 3 aln_msa_to_pdb()
+$call_info -- meta data of the analysis run inlcuding 3D sliding window paramters and msa and pdb file paths
+
+## Tunable patch parameters
+Here we will set patch size to 10 Angstrom radius (defulat 15 Angstrom) and include all residues (defualt is residues with relative solvent accessibility of at least 0.1).
+Many other parameters can be adjusted through msa_controls, pdb_controls, and stat_controls to run_evo3d(). 
+Additionally we will save our msa subsets and dataframe to file with argumnets write_patch_fastas and write_evo3d_df.
+Let's also turn off statistics calculation sense we are saving msa subsets for downstream analysis
+
+```r
+library(evo3D)
+
+# load the example data again
+msa_path = system.file("extdata", "rh5_pfalc.fasta", package = "evo3D")
+pdb_path = system.file("extdata", "rh5_6mpv.pdb", package = "evo3D")
+
+# lets look at default parameters #
+show_evo3d_defaults()
+
+# we want to change patch.dist.cutoff and patch.rsa.cutoff in pdb_controls #
+results2 = run_evo3d(msa_path, pdb_path, pdb_controls = list(patch.dist.cutoff = 10, patch.rsa.cutoff = 0),
+                     write_patch_fastas = TRUE, write_evo3d_df = TRUE, output_dir = 'rh5_10ang_0rsa',
+                     run_selection = FALSE)
+
+```
+
+
 
 ## Running step-wise evo3D modules (more control)  
 
