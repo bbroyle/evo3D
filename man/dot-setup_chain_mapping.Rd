@@ -24,3 +24,4 @@ Standardizes chain input for main chains, interface chains, or occlusion chains 
 \details{
 This function ensures each PDB has an explicit chain mapping, even when user input is partial or symbolic (e.g. \code{"auto"}, \code{"all"}).
 }
+\keyword{internal}

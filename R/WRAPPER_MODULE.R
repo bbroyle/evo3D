@@ -291,7 +291,7 @@ show_evo3d_defaults = function(module_name = NULL){
 #' @param occlusion_chain Chains to use for occlusion in RSA/SASA. Same input rules as \code{interface_chain}.
 #'
 #' @return A list with standardized inputs and a \code{run_grid} data frame detailing each MSA–PDB–chain combination.
-#' @keyword internal
+#' @keywords internal
 .setup_multi_run_info = function(msa, pdb, chain, interface_chain, occlusion_chain){
 
   # goal is to setup run grid and return msa/pdb/chain/interface_chain/occlusion_chain objects #

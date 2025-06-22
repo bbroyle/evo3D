@@ -4,12 +4,10 @@
 \alias{.align_sequences}
 \title{Align Reference and PDB Sequences}
 \usage{
-.align_sequences(sequences, generate_plot = T, user_supplied_alignment = NULL)
+.align_sequences(sequences, user_supplied_alignment = NULL)
 }
 \arguments{
 \item{sequences}{A named character vector of two protein sequences: the reference first, the structure-derived second.}
-
-\item{generate_plot}{Logical; if \code{TRUE}, returns a ggplot2 coverage plot based on alignment.}
 
 \item{user_supplied_alignment}{Placeholder for pre-aligned input (currently unused).}
 }
@@ -18,7 +16,6 @@ A list with elements:
 \describe{
   \item{aln_mat}{Character matrix of aligned sequences.}
   \item{coverage}{Named list of coverage ranges for each sequence.}
-  \item{coverage_plot}{Optional ggplot2 object (or \code{NULL} if \code{generate_plot = FALSE}).}
 }
 }
 \description{
@@ -26,5 +23,5 @@ Aligns a pair of amino acid sequences using ClustalOmega (via the \pkg{msa} pack
 computes positional mismatches, and summarizes coverage across the alignment.
 }
 \details{
-Used internally to align MSA or PDB-derived sequences to a reference, with optional plotting of coverage.
+Used internally to align MSA or PDB-derived sequences to a reference
 }

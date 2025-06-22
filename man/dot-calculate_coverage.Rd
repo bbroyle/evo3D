@@ -21,3 +21,4 @@ Optionally includes ranges of mismatched positions between aligned sequences.
 \details{
 Called by \code{.align_sequences()}.
 }
+\keyword{internal}

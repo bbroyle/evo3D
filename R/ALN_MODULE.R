@@ -18,7 +18,7 @@
 #' @param mismatch Optional numeric vector of mismatch positions to summarize (e.g., from sequence comparison).
 #'
 #' @return A named list. Each element is a character vector of ranges for a sequence (e.g., \code{"5:25"}), plus an optional \code{mismatch} element.
-#' @keyword internal
+#' @keywords internal
 .calculate_coverage = function(aln_mat, mismatch) {
   covered_regions = list()
 
@@ -88,7 +88,7 @@
 # #' plot <- .plot_coverage(coverage)
 # #' print(plot)
 # #' }
-# #' @keyword internal
+# #' @keywords internal
 # .plot_coverage = function(coverage) {
 #   # convert coverage to data frame for plotting
 #   plot_data <- data.frame(

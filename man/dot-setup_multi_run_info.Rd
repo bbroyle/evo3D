@@ -24,3 +24,4 @@ A list with standardized inputs and a \code{run_grid} data frame detailing each 
 Expands combinations of MSA and PDB inputs into a run grid for multi-model, multi-chain evo3D analyses.
 Automatically handles chain assignment and resolves homomultimer expansion where applicable.
 }
+\keyword{internal}
