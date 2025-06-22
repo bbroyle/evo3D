@@ -1,7 +1,10 @@
+# ------------------------------------------ #
+# WRAPPER_MODULE.R
+# utilities for setting up run_grid, evo3d defaults, and wrapper script
+# Brad Broyles
+# ------------------------------------------ #
 
-# handling default controls and user input control lists() --
-
-# include all defaults as an exported list #
+# set default controls ----
 {
   .evo3d_defaults = list(
     default_msa_controls = list(
@@ -35,6 +38,8 @@
     )
   )
 }
+
+# .setup_controls ----
 
 #' Validate and Merge Control Lists
 #'
@@ -72,6 +77,8 @@
   # WOULD BE BETTER TO LOAD DEFAULTS ONCE (outside function) -- but for now is okay #
 }
 
+# .show_evo3d_defaults ----
+
 #' Show Default evo3D Controls
 #'
 #' Print default evo3D module control settings (MSA, PDB, alignment, statistics).
@@ -106,7 +113,9 @@ show_evo3d_defaults = function(module_name = NULL){
   invisible(NULL)  # to avoid printing the function definition
 }
 
-# handle run grid set ups --
+# .setup_chain_mapping ----
+
+# handle run grid set ups
 #' Setup Chain Mapping for PDB–MSA Alignment
 #'
 #' Standardizes chain input for main chains, interface chains, or occlusion chains across multiple PDBs and MSAs.
@@ -119,7 +128,7 @@ show_evo3d_defaults = function(module_name = NULL){
 #' @param msa_count Number of MSAs per PDB (e.g. for homomultimers).
 #'
 #' @return A named list of length \code{pdb_count}, where each element is a chain mapping vector or character.
-#' @export
+#' @keywords internal
 .setup_chain_mapping = function(chain, chain_type = 'main', pdb_count = 1, msa_count = 1) {
   # Input validation
   if (!chain_type %in% c('main', 'interface', 'occlusion')) {
@@ -268,6 +277,8 @@ show_evo3d_defaults = function(module_name = NULL){
   return(out_chain)
 }
 
+# .setup_multi_run_info ----
+
 #' Setup evo3D Multi-Run Grid
 #'
 #' Expands combinations of MSA and PDB inputs into a run grid for multi-model, multi-chain evo3D analyses.
@@ -280,7 +291,7 @@ show_evo3d_defaults = function(module_name = NULL){
 #' @param occlusion_chain Chains to use for occlusion in RSA/SASA. Same input rules as \code{interface_chain}.
 #'
 #' @return A list with standardized inputs and a \code{run_grid} data frame detailing each MSA–PDB–chain combination.
-#' @export
+#' @keyword internal
 .setup_multi_run_info = function(msa, pdb, chain, interface_chain, occlusion_chain){
 
   # goal is to setup run grid and return msa/pdb/chain/interface_chain/occlusion_chain objects #
@@ -357,6 +368,8 @@ show_evo3d_defaults = function(module_name = NULL){
 }
 
 
+# run_evo3D ----
+
 #' Run evo3D Workflow
 #'
 #' Full evo3D wrapper to align MSA(s) and PDB(s), generate 3D-defined patches, codon mappings, and selection statistics.
@@ -406,13 +419,6 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   run_grid = run_info$run_grid
   interface_chain = run_info$interface_chain
   occlusion_chain = run_info$occlusion_chain
-
-  #cat('Run grid created with the following parameters:\n')
-  #print(run_grid)
-  #cat('\nInterface chains:\n')
-  #print(interface_chain)
-  #cat('Occlusion chains:\n')
-  #print(occlusion_chain)
 
   #1 MODULE 1 msa_to_ref() ----
 
@@ -467,9 +473,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
     }
   }
 
-  # print updated run grid
-  #cat('\nUpdated run grid with resolved chains:\n')
-  #print(run_grid)
+  # need to filter auto threshold -- off for now #
 
   #2 MODULE 2 pdb_to_patch() ----
 
@@ -511,11 +515,9 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   rm(run_info, pdb_cache)
   invisible(gc())
 
-
-
   #3 MODULE 3 align_msa_to_pdb ----
 
-  print('STEP 3: Aligning MSAs to PDBs...')
+  cat('STEP 3: Aligning MSAs to PDBs...')
 
   # if chain is NA (no pdb to msa mapping -- add empty set) #
   # this strategy keeps pdb and msa numbering from extend_pdb()
@@ -574,6 +576,9 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
 
   # Extend homomultimers
   for(multimer in needs_homomultimer_extension){
+
+    cat('STEP 3.5: Extending homomultimers...')
+
     # can do all at once -- then update run grid so pdb extend doesnt run on these #
     rows_for_multimer = which(paste(working_run_grid$msa, working_run_grid$pdb, sep="_") == multimer)
     msa_id = working_run_grid$msa[rows_for_multimer[1]]
@@ -598,6 +603,9 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
 
   # First: Handle patch extensions (same MSA --> multiple PDBs)
   for(msa_id in needs_pdb_extension) {
+
+    cat('STEP 3.5: Extending complimentary PDB info... ')
+
     rows_for_msa = which(working_run_grid$msa == msa_id)
 
     # Start with the first PDB's result
@@ -625,6 +633,9 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   needs_msa_extension = names(pdb_counts)[pdb_counts > 1]
 
   for(pdb_id in needs_msa_extension) {
+
+    cat('STEP 3.5: Extending multi-chain info... ')
+
     rows_for_pdb = which(working_run_grid$pdb == pdb_id)
 
     # Start with first, extend with rest
@@ -652,7 +663,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
 
   #4 MODULE 4 calculate_patch_stats ----
 
-  print('STEP 4: Calculating patch statistics...')
+  cat('STEP 4: Calculating patch statistics...')
 
   # build evo3d -- might not have selection data
   evo3d_df = final_result$aln_df
@@ -699,7 +710,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
 
   #5 saving/writing -- what to return ----
 
-  print('STEP 5: Saving results...')
+  cat('STEP 5: Saving results...')
 
   if (write_patch_fastas){
 
@@ -708,10 +719,20 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
       output_dir = '.'
     }
 
-    fasta_dir = paste0(output_dir, '/patch_fastas/')
+    fasta_dir = file.path(output_dir, "patch_fastas")
 
     write_patch_fastas(final_result$msa_subsets, output_dir = fasta_dir)
   }
+
+  # reorder the columns of evo3d_df #
+  # msa (if available), codon, msa_subset_id, ref_aa, pdbX_aa, pdbY_aa, ..., pdbX_residue_id, pdbY_residue_id, codon_patch, everything else #
+  codon_info =  intersect(c("msa","codon","msa_subset_id","ref_aa"), names(evo3d_df))
+  aa_cols = grep("^pdb.*_aa$",          names(evo3d_df), value = TRUE)
+  id_cols = grep("^pdb.*_residue_id$",  names(evo3d_df), value = TRUE)
+  patch_col = intersect("codon_patch", names(df))
+  other = setdiff(names(df), c(start_cols, aa_cols, id_cols, patch_col))
+  col_order = c(codon_info, aa_cols, id_cols, patch_col, other)
+  evo3d_df = evo3d_df[, col_order, drop = FALSE]
 
   if (write_evo3d_df) {
 
@@ -720,7 +741,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
       output_dir = '.'
     }
 
-    csv_path = paste0(output_dir, '/evo3d_df.csv')
+    csv_path = file.path(output_dir, '/evo3d_df.csv')
 
     write.csv(evo3d_df, file = csv_path, row.names = FALSE, quote = FALSE)
 
