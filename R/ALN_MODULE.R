@@ -177,7 +177,7 @@
       ),
       call. = FALSE
     )
-  }=
+  }
 
   # use msa::msa() ~ with baked in clustal omega (defualt to GONNET sub matrix)
     # could make invisible()
