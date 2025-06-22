@@ -20,21 +20,23 @@
       patch.dist.cutoff = 15,      # ** defualt angstrom
       patch.rsa.cutoff = 0.1,      # for surface def
       patch.sasa.cutoff = NULL,    # if using sasa instead of rsa cuts
-      patch.only.exposed = T,      # seed is exposed but patch can be also buried
+      patch.only.exposed = TRUE,      # seed is exposed but patch can be also buried
       max.patch = NULL,            # max aa in patch
       interface.dist.cutoff = 5    # interface dist cut --
     ),
 
-    default_aln_controls = list(),
+    default_aln_controls = list(
+      use_sample_names = TRUE
+    ),
 
     default_stat_controls = list(
-      calc_pi = T,
-      calc_tajima = T,
-      calc_hap = T,
-      calc_polymorphic = T,
-      calc_patch_entropy = F,
-      calc_site_entropy = F, # needs flag
-      valid_aa_only = F
+      calc_pi = TRUE,
+      calc_tajima = TRUE,
+      calc_hap = TRUE,
+      calc_polymorphic = TRUE,
+      calc_patch_entropy = FALSE,
+      calc_site_entropy = FALSE, # needs flag
+      valid_aa_only = FALSE
     )
   )
 }
@@ -648,7 +650,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
       msa_set = c(msa_set, current_msa)
       extended_result = extend_msa(extended_result, working_aln_sets[[rows_for_pdb[i]]],
                                    msa_info_sets[c(msa_set)],
-                                   use_sample_names = use_sample_names
+                                   use_sample_names = aln_controls$use_sample_names
                                    )
     }
 
