@@ -730,7 +730,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   aa_cols = grep("^pdb.*_aa$",          names(evo3d_df), value = TRUE)
   id_cols = grep(".*residue_id$",  names(evo3d_df), value = TRUE)
   patch_col = "codon_patch"
-  other = setdiff(names(df), c(codon_info, aa_cols, id_cols, patch_col))
+  other = setdiff(names(evo3d_df), c(codon_info, aa_cols, id_cols, patch_col))
   col_order = c(codon_info, aa_cols, id_cols, patch_col, other)
   evo3d_df = evo3d_df[, col_order, drop = FALSE]
 
