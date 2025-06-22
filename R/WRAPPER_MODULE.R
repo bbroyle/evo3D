@@ -414,6 +414,9 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   aln_controls = .setup_controls(aln_controls, 'aln')
   stat_controls = .setup_controls(stat_controls, 'stat')
 
+  use_sample_names = aln_controls$use_sample_names
+  aln_controls$use_sample_names = NULL
+
   # SETUP RUN INFO #
   run_info = .setup_multi_run_info(msa, pdb, chain, interface_chain, occlusion_chain)
 
@@ -650,7 +653,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
       msa_set = c(msa_set, current_msa)
       extended_result = extend_msa(extended_result, working_aln_sets[[rows_for_pdb[i]]],
                                    msa_info_sets[c(msa_set)],
-                                   use_sample_names = aln_controls$use_sample_names
+                                   use_sample_names = use_sample_names
                                    )
     }
 
