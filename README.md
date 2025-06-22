@@ -63,12 +63,12 @@ write_stat_to_bfactor(results, stat_name = "hap", outfile = "rh5_hap_div.pdb")
 
 ```
 
-Let's quikly cover run_evo3d() results. Results are in a structured list -- with the following entries:\n
-$evo3d_df -- dataframe holding msa to pdb alignment information, 3D codon patch information, and calculated statistics
-$final_msa_subsets -- list of msa subsets named on codon at center of patch or interface id
-$msa_info_sets -- outputs of module 1 msa_to_ref()
-$pdb_info_sets -- outputs of module 2 pdb_to_patch()
-$aln_info_sets -- outputs of module 3 aln_msa_to_pdb()
+Let's quikly cover run_evo3d() results. Results are in a structured list -- with the following entries:<br/>
+$evo3d_df -- dataframe holding msa to pdb alignment information, 3D codon patch information, and calculated statistics<br/>
+$final_msa_subsets -- list of msa subsets named on codon at center of patch or interface id<br/>
+$msa_info_sets -- outputs of module 1 msa_to_ref()<br/>
+$pdb_info_sets -- outputs of module 2 pdb_to_patch()<br/>
+$aln_info_sets -- outputs of module 3 aln_msa_to_pdb()<br/>
 $call_info -- meta data of the analysis run inlcuding 3D sliding window paramters and msa and pdb file paths
 
 ## Tunable patch parameters
