@@ -114,7 +114,7 @@ evo3D:::.auto_detect_chain(msa_info$pep, pdb_path)
 evo3D:::.plot_chain_map(pdb_path)
 
 # read in pdb, calculate distance matrix, calculate solvent accessibiliity, calculate patches #
-pdb_info = pdb_to_patch(pdb_path = pdb_path, chain = 'B')
+pdb_info = pdb_to_patch(pdb_path, chain = 'B')
   
 # generate alignment between msa and pdb and create msa_subsets #
 aln_info = aln_msa_to_pdb(msa_info, pdb_info, chain = 'B')
