@@ -94,7 +94,7 @@ results2 = run_evo3d(msa_path, pdb_path, pdb_controls = list(patch.dist.cutoff =
 
 ```
 
-## Running step-wise evo3D modules (more control)  
+## Running step-wise evo3D modules
 
 ```r
 library(evo3D)
@@ -124,8 +124,6 @@ selection_df = run_pegas_three(aln_info$msa_subsets, aln_info$aln_df)
 
 ```
 
-
-
 ## License
 
 This package is released under the MIT License.  
@@ -140,14 +138,13 @@ Purdue University
 bbroyle@purdue.edu
 
 ## Running multi-chain (heterodimer)
-
 ```r
 library(evo3D)
 
-# two msa's for e1e2 complex #
-msa_path1 <- system.file("extdata", "e1_hepc.aln", package = "evo3D")
-msa_path2 <- system.file("extdata", "e2_hepc.aln", package = "evo3D")
-pdb_path <- system.file("extdata", "e1e2_8fsj.pdb", package = "evo3D")
+# two pdb paths #
+msa_path1 = system.file("extdata", "e1_hepc.aln", package = "evo3D")
+msa_path2 = system.file("extdata", "e2_hepc.aln", package = "evo3D")
+pdb_path = system.file("extdata", "e1e2_8fsj.pdb", package = "evo3D")
 
 # FIRST WAY - use wrapper #
 results = run_evo3d(list(msa_path1, msa_path2), pdb_path) # 'auto' chain will handle mapping
@@ -155,21 +152,54 @@ results = run_evo3d(list(msa_path1, msa_path2), pdb_path) # 'auto' chain will ha
 # SECOND WAY - by module #
 
 # process each MSA #
-msa_info1 <- msa_to_ref(msa_path1)
-msa_info2 <- msa_to_ref(msa_path2)
+msa_info1 = msa_to_ref(msa_path1)
+msa_info2 = msa_to_ref(msa_path2)
 
 # process 1 pdb #
-pdb_info <- pdb_to_patch(pdb_path, chain = c('A', 'E'))
+pdb_info = pdb_to_patch(pdb_path, chain = c('A', 'E'))
 
 # each chain gets a alignment to msa #
-aln_info1 <- aln_msa_to_pdb(msa_info1, pdb_info, chain = 'A')
-
-aln_info2 <- aln_msa_to_pdb(msa_info2, pdb_info, chain = 'E')
+aln_info1 = aln_msa_to_pdb(msa_info1, pdb_info, chain = 'A')
+aln_info2 = aln_msa_to_pdb(msa_info2, pdb_info, chain = 'E')
 
 # build cross chain msa subsets #
-aln_info_combined <- extend_msa(aln_info1, aln_info2, list(msa_info1, msa_info2))
+aln_info_combined = extend_msa(aln_info1, aln_info2, list(msa_info1, msa_info2))
 
 # calculate selection #
-selection_df <- run_pegas_three(aln_info_combined$msa_subsets, aln_info_combined$aln_df)
+selection_df = run_pegas_three(aln_info_combined$msa_subsets, aln_info_combined$aln_df)
+```
+
+
+## Running multi-pdb (complimentary MSA coverage)
+
+```r
+library(evo3D)
+
+# two msa's for e1e2 complex #
+msa_path = system.file("extdata", "rh5_pfalc.fasta", package = "evo3D")
+pdb_path1 = system.file("extdata", "rh5_6mpv_AB.pdb", package = "evo3D")
+pdb_path2 = system.file("extdata", "rh5_8q5d_A.pdb", package = "evo3D")
+
+# FIRST WAY - use wrapper #
+results = run_evo3d(msa_path, list(pdb_path1, pdb_path2)) # 'auto' chain will handle mapping
+
+# SECOND WAY - by module #
+
+# process MSA #
+msa_info = msa_to_ref(msa_path1)
+
+# process each PDB #
+pdb_info1 = pdb_to_patch(pdb_path1, chain = 'B')
+pdb_info2 = pdb_to_patch(pdb_path2, chain = 'A')
+
+# each chain gets a alignment to msa #
+aln_info1 = aln_msa_to_pdb(msa_info, pdb_info1, chain = 'B')
+aln_info2 = aln_msa_to_pdb(msa_info, pdb_info2, chain = 'A')
+
+# build cross chain msa subsets #
+aln_info_combined = extend_pdb(aln_info1, aln_info2)
+
+# calculate selection #
+selection_df = run_pegas_three(aln_info_combined$msa_subsets, aln_info_combined$aln_df)
 
 ```
