@@ -517,7 +517,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
 
   #3 MODULE 3 align_msa_to_pdb ----
 
-  cat('STEP 3: Aligning MSAs to PDBs...')
+  cat('STEP 3: Aligning MSAs to PDBs...\n\n')
 
   # if chain is NA (no pdb to msa mapping -- add empty set) #
   # this strategy keeps pdb and msa numbering from extend_pdb()
@@ -577,7 +577,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   # Extend homomultimers
   for(multimer in needs_homomultimer_extension){
 
-    cat('STEP 3.5: Extending homomultimers...')
+    cat('STEP 3.5: Extending homomultimers...\n')
 
     # can do all at once -- then update run grid so pdb extend doesnt run on these #
     rows_for_multimer = which(paste(working_run_grid$msa, working_run_grid$pdb, sep="_") == multimer)
@@ -604,7 +604,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   # First: Handle patch extensions (same MSA --> multiple PDBs)
   for(msa_id in needs_pdb_extension) {
 
-    cat('STEP 3.5: Extending complimentary PDB info... ')
+    cat('STEP 3.5: Extending complimentary PDB info...\n')
 
     rows_for_msa = which(working_run_grid$msa == msa_id)
 
@@ -634,7 +634,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
 
   for(pdb_id in needs_msa_extension) {
 
-    cat('STEP 3.5: Extending multi-chain info... ')
+    cat('STEP 3.5: Extending multi-chain info...\n')
 
     rows_for_pdb = which(working_run_grid$pdb == pdb_id)
 
@@ -663,7 +663,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
 
   #4 MODULE 4 calculate_patch_stats ----
 
-  cat('STEP 4: Calculating patch statistics...')
+  cat('STEP 4: Calculating patch statistics...\n\n')
 
   # build evo3d -- might not have selection data
   evo3d_df = final_result$aln_df
@@ -730,7 +730,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   aa_cols = grep("^pdb.*_aa$",          names(evo3d_df), value = TRUE)
   id_cols = grep("^pdb.*_residue_id$",  names(evo3d_df), value = TRUE)
   patch_col = intersect("codon_patch", names(df))
-  other = setdiff(names(df), c(start_cols, aa_cols, id_cols, patch_col))
+  other = setdiff(names(df), c(codon_info, aa_cols, id_cols, patch_col))
   col_order = c(codon_info, aa_cols, id_cols, patch_col, other)
   evo3d_df = evo3d_df[, col_order, drop = FALSE]
 
