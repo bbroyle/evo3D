@@ -94,6 +94,27 @@ results2 = run_evo3d(msa_path, pdb_path, pdb_controls = list(patch.dist.cutoff =
 
 ```
 
+## Running on protein complexes (multiple MSAs), multiple proteins (complementary MSA coverage)
+
+```r
+
+# protein complexes with multiple MSAs
+msa1 = system.file("extdata", "e1_hepc_sorted.aln", package = "evo3D")
+msa2 = system.file("extdata", "e2_hepc_sorted.aln", package = "evo3D")
+pdb = system.file("extdata", "e1e2_8fsj.pdb", package = "evo3D")
+results1 = run_evo3d(list(msa1, msa2), pdb)
+
+# multiple pdbs that increase MSA coverage
+msa = system.file("extdata", "rh5_pfalc.fasta", package = "evo3D")
+pdb1 = system.file("extdata", "rh5_6mpv_AB.pdb", package = "evo3D")
+pdb2 = system.file("extdata", "rh5_8q5d_A.pdb", package = "evo3D")
+results2 = run_evo3d(msa, list(pdb1, pdb2))
+
+# homomultimers (overload chain argument)
+# data not inlcuded in package #
+results3 = run_evo3d(msa, pdb, chain = 'ABC')
+
+
 ## Running step-wise evo3D modules
 
 ```r
