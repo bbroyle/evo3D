@@ -223,7 +223,7 @@
 #' @param chain Optional chain ID string (or vector) to restrict mapping to a subset of chains.
 #'
 #' @return Modified \code{aln_mat} with alignment positions replaced by codon and PDB residue indices.
-#' @export
+#' @keywords internal
 .map_aln_to_positions = function(aln_mat, residue_df, chain = NA){
   # aln_mat is from align_sequences() aln_mat$aln_mat
   # residue_df is from identify_windows()
@@ -268,7 +268,7 @@
 #'   \item{codon_patch}{Codon-based patch identifier (e.g., "15+22+27")}
 #'   \item{msa_subset_id}{Unique ID used to extract the corresponding MSA subset}
 #' }
-#' @export
+#' @keywords internal
 .map_patches_to_codons = function(pos_aln, residue_df){
 
   # 6/14 update -- now we will add a msa_subset_id column #
@@ -338,7 +338,6 @@
 
 # .extract_msa_subsets() ----
 
-#.extract_msa_subsets() ----
 
 #' Extract Codon-Aligned Nucleotide MSA Windows
 #'
@@ -352,7 +351,7 @@
 #' @param codon_patches A data frame with \code{codon_patch} and \code{msa_subset_id} columns (from \code{.map_patches_to_codons()}).
 #'
 #' @return A named list of nucleotide MSA subsets, each a matrix corresponding to one patch.
-#' @export
+#' @keywords internal
 .extract_msa_subsets = function(msa, codon_patches){
   # msa is the alignment matrix #
   # codon_patches is the patches to extract #
@@ -400,7 +399,6 @@
 #' @param msa_info A named list output from \code{WRAPPER_msa_to_ref()}, containing the MSA matrix and reference peptide sequence.
 #' @param pdb_info A named list output from \code{WRAPPER_pdb_to_patch()}, including PDB-derived sequences and residue/patch annotations.
 #' @param chain Character string indicating the chain to analyze. Required.
-#' @param coverage_plot Logical; if \code{TRUE}, alignment coverage plot will be shown.
 #' @param drop_unused_residues Logical; if \code{TRUE}, drops PDB residues not linked to codon-level info.
 #'
 #' @return A list with:
@@ -410,7 +408,7 @@
 #'   \item{msa_subsets}{Named list of nucleotide MSA matrices, one per patch.}
 #' }
 #' @export
-aln_msa_to_pdb = function(msa_info, pdb_info, chain = NA, coverage_plot = FALSE, drop_unused_residues = TRUE){
+aln_msa_to_pdb = function(msa_info, pdb_info, chain = NA, drop_unused_residues = TRUE){
 
   # msa_info ~ must be list object from WRAPPER_msa #
   # pdb_info ~ must be list object from WRAPPER_pdb #
@@ -427,7 +425,7 @@ aln_msa_to_pdb = function(msa_info, pdb_info, chain = NA, coverage_plot = FALSE,
   residue_df = pdb_info$residue_df
 
   # step 1: align sequences # #NOTE LETS MOVE COVERAGE PLOT OUTSIDE ALIGNMENTS #
-  aln = .align_sequences(c(pep, seq), generate_plot = coverage_plot)
+  aln = .align_sequences(c(pep, seq))
 
   # step 2: map alignment to positions #
   pos_mat = .map_aln_to_positions(aln$aln_mat,
