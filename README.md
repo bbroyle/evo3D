@@ -82,7 +82,7 @@ library(evo3D)
 
 # load the example data again
 msa_path = system.file("extdata", "rh5_pfalc.fasta", package = "evo3D")
-pdb_path = system.file("extdata", "rh5_6mpv.pdb", package = "evo3D")
+pdb_path = system.file("extdata", "rh5_6mpv_AB.pdb", package = "evo3D")
 
 # lets look at default parameters #
 show_evo3d_defaults()
@@ -94,32 +94,33 @@ results2 = run_evo3d(msa_path, pdb_path, pdb_controls = list(patch.dist.cutoff =
 
 ```
 
-
-
 ## Running step-wise evo3D modules (more control)  
 
 ```r
 library(evo3D)
 
-# we will use the same data as first example #
-msa_path <- system.file("extdata", "rh5_pfalc.fasta", package = "evo3D")
-pdb_path <- system.file("extdata", "rh5_4wat.pdb", package = "evo3D")
+# same example files as above #
+msa_path = system.file("extdata", "rh5_pfalc.fasta", package = "evo3D")
+pdb_path = system.file("extdata", "rh5_6mpv_AB.pdb", package = "evo3D")
 
-# read in msa #
-msa_info <- msa_to_ref(msa_path)
+# read in msa, get a reference sequence, and translate that sequence #
+msa_info = msa_to_ref(msa_path)
 
-# can run .auto_detect_chain(msa_info$pep, pdb_path) #
-# can also run .plot_chain_map(pdb_path) to see your protein in 2D with chain info #
+# Some helpful functions for detecting chains of interest #
+# .auto_detect_chain shows % of kmers for pdb chains matching peptide reference sequence #
+evo3D:::.auto_detect_chain(msa_info$pep, pdb_path)
+# -or- #
+# .plot_chain_map() gives quick viewing access without leaving R #
+evo3D:::.plot_chain_map(pdb_path)
 
-# read in pdb #
-# pdb_to_patch() has no msa info so 'auto' chain is not valid (see above) #
-pdb_info <- pdb_to_patch(pdb_path = pdb_path, chain = 'A')
+# read in pdb, calculate distance matrix, calculate solvent accessibiliity, calculate patches #
+pdb_info = pdb_to_patch(pdb_path = pdb_path, chain = 'B')
   
-# generate alignment between msa and pdb / and create msa_subsets #
-aln_info <- aln_msa_to_pdb(msa_info, pdb_info, chain = 'A', coverage_plot = T)
+# generate alignment between msa and pdb and create msa_subsets #
+aln_info = aln_msa_to_pdb(msa_info, pdb_info, chain = 'B')
   
-# calculate selection #
-selection_df <- run_pegas_three(aln_info$msa_subsets, aln_info$aln_df)
+# calculate selection (3 stats from pegas package - tajima's D, nucleotide diversity, haplotype diversity #
+selection_df = run_pegas_three(aln_info$msa_subsets, aln_info$aln_df)
 
 ```
 
