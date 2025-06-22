@@ -47,13 +47,20 @@ library(evo3D)
 
 # getting file paths -- you can replace with your own data #
 msa_path = system.file("extdata", "rh5_pfalc.fasta", package = "evo3D")
-pdb_path = system.file("extdata", "rh5_6mpv.pdb", package = "evo3D")
+pdb_path = system.file("extdata", "rh5_6mpv_AB.pdb", package = "evo3D")
 
 # run_evo3D is designed for single analysis runs # --- for batch runs run_evo3D_batch will be provided soon #
-# chain = 'auto' by default or set to 'A' for this example #
-results = run_evo3d(msa_path, pdb_path, chain = 'A') 
+# chain = 'auto' by default or set to 'B' for this example #
+results = run_evo3d(msa_path, pdb_path, chain = 'B') 
 
 write_stat_to_bfactor(results, stat_name = "hap", outfile = "rh5_hap_div.pdb")
+
+# !!! scores are not selection at that amino acid -- but at the patch centered on that amino acid !!!
+# also some residues don't have a score for this statistic - they have been given arbitrarily low score of -10 #
+# to color structure try these commands in pymol #
+# select stat, b > -10
+# spectrum b, selection=stat
+
 ```
 
 Let's quikly cover run_evo3d() results. Results are in a structured list -- with the following entries:
