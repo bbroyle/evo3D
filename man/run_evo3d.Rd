@@ -10,15 +10,16 @@ run_evo3d(
   chain = "auto",
   interface_chain = NA,
   occlusion_chain = NA,
-  run_selection = TRUE,
-  auto_chain_threshold = 0.2,
-  write_patch_fastas = FALSE,
-  write_evo3d_df = FALSE,
-  output_dir = NULL,
+  compute_stats = TRUE,
+  detail_level = 1,
+  verbose = 1,
+  restart_run = NULL,
+  user_aln = NULL,
   msa_controls = list(),
   pdb_controls = list(),
   aln_controls = list(),
-  stat_controls = list()
+  stat_controls = list(),
+  output_controls = list()
 )
 }
 \arguments{
@@ -32,15 +33,27 @@ run_evo3d(
 
 \item{occlusion_chain}{Chain(s) to include in occlusion masking for RSA (optional).}
 
-\item{run_selection}{Logical; whether to calculate nucleotide diversity, Tajima’s D, etc. (default: \code{TRUE}).}
+\item{compute_stats}{Logical; whether to calculate nucleotide diversity, Tajima’s D, etc. (default: \code{TRUE}).}
 
-\item{auto_chain_threshold}{Similarity cutoff used to match MSA peptide to PDB chains (default: \code{0.2}).}
+\item{detail_level}{Controls the level of detail in the returned R object.
 
-\item{write_patch_fastas}{Logical; whether to save individual patch-level MSA FASTA files.}
+\describe{
+  \item{0}{Return only `evo3d_df` and `pdb_info_sets`. Minimal memory usage. Suitable for post hoc visualization and writing to PDB files, but not for restart or stat recomputation.}
+  \item{1}{Adds `msa_info_sets`, enabling restart with user-provided alignments. Does not include full alignment-to-structure mappings or subsets.}
+  \item{2}{Adds full `msa_subsets` and MSA-to-PDB patch mappings, allowing for patch-level stat recomputation or post hoc reruns on individual structures.}
+}}
 
-\item{write_evo3d_df}{Logical; whether to save the final evo3D dataframe to CSV.}
+\item{verbose}{Controls the verbosity of printed output.
 
-\item{output_dir}{Directory path for writing outputs if above flags are \code{TRUE}.}
+\describe{
+  \item{0}{Silent mode. Only errors or critical messages are printed.}
+  \item{1}{Basic progress updates showing which module is running.}
+  \item{2}{Detailed output, including all submodular steps.}
+ }}
+
+\item{restart_run}{A previous evo3d run object used to restart the pipeline (e.g., after alignment failure or to reuse mapped PDB metadata).}
+
+\item{user_aln}{A user-provided MSA aligned to the reference sequence. Can be a single alignment or a list (for multi-run pipelines). Used in conjunction with \code{restart_run}.}
 
 \item{msa_controls}{List of control parameters for MSA preprocessing (e.g. \code{ref_method}, \code{force_seqtype}).}
 
@@ -49,6 +62,8 @@ run_evo3d(
 \item{aln_controls}{List of control parameters for MSA–structure alignment (if applicable).}
 
 \item{stat_controls}{List of control parameters for patch-level statistic calculations (e.g. \code{calc_pi}, \code{calc_tajima}).}
+
+\item{output_controls}{List of control parameters for output formatting (e.g. \code{output_format}, \code{output_dir}).}
 }
 \value{
 A list containing:

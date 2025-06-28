@@ -408,7 +408,7 @@
 #'   \item{msa_subsets}{Named list of nucleotide MSA matrices, one per patch.}
 #' }
 #' @export
-aln_msa_to_pdb = function(msa_info, pdb_info, chain = NA, drop_unused_residues = TRUE){
+aln_msa_to_pdb = function(msa_info, pdb_info, chain = NA, drop_unused_residues = TRUE, verbose = 1){
 
   # msa_info ~ must be list object from WRAPPER_msa #
   # pdb_info ~ must be list object from WRAPPER_pdb #
@@ -425,14 +425,23 @@ aln_msa_to_pdb = function(msa_info, pdb_info, chain = NA, drop_unused_residues =
   residue_df = pdb_info$residue_df
 
   # step 1: align sequences # #NOTE LETS MOVE COVERAGE PLOT OUTSIDE ALIGNMENTS #
+  if(verbose > 0){
+    cat('\taln_msa_to_pdb: aligning msa to pdb ')
+  }
   aln = .align_sequences(c(pep, seq))
 
   # step 2: map alignment to positions #
+  if(verbose > 0){
+    cat('\taln_msa_to_pdb: mapping alignment to codon and pdb positions\n')
+  }
   pos_mat = .map_aln_to_positions(aln$aln_mat,
                                  residue_df,
                                  chain = chain)
 
   # step 3: map patches to nucleotides #
+  if(verbose > 0){
+    cat('\taln_msa_to_pdb: converting pdb patches to codon\n')
+  }
   codon_patches = .map_patches_to_codons(pos_mat, residue_df)
 
   # FILTER: drop unused PDB residues if requested

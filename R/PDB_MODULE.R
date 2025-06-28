@@ -1,11 +1,11 @@
 # --------------------------------------------------------------- #
 # PDB MODULE goal is to return pdb_info list
 # 1. pdb object
-# 2. 
-# 
+# 2.
+#
 # DEV NOTES:
-# 1. should mds proj be saved so I dont have to remake them 
-# 2. 
+# 1. should mds proj be saved so I dont have to remake them
+# 2.
 # email me: bbroyle@purdue.edu
 # --------------------------------------------------------------- #
 
@@ -38,7 +38,7 @@ find_matching_structures = function(pep, identity_cutoff = 80, max_hits = 5, gen
   if (!is.numeric(max_hits) || max_hits < 1) {
     stop('`max_hits` must be a positive integer')
   }
-  
+
   message(
     "\n⚠️ This function queries external databases; avoid rapid parallel calls to prevent rate-limiting.\n"
   )
@@ -47,7 +47,7 @@ find_matching_structures = function(pep, identity_cutoff = 80, max_hits = 5, gen
   bl = bio3d::blast.pdb(pep)
   hits = bl$hit.tbl
   hits = hits[order(hits$mlog.evalue, decreasing = T),]
-  
+
   # filter on identity cutoff and then grab top hits #
   filtered_hits = hits[hits$identity >= identity_cutoff,]
   top_hits = filtered_hits[seq_len(min(max_hits, nrow(filtered_hits))),]
@@ -198,23 +198,23 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 
 # EXPLORE PDB UTILS ----
 .mds_pdb = function(pdb, chain = NA, in_module = F){
-  
+
   # check if pdb is a file path or object
   pdb = .standardize_pdb_input(pdb)
-  
-  # maybe just ca 
+
+  # maybe just ca
   ca = pdb$atom[pdb$atom$elety == 'CA', ]
-  
+
   # if chain is provided, filter by chain
   if(!is.na(chain)){
     ca = ca[ca$chain == chain, ]
   }
-  
+
   ca$insert = ifelse(is.na(ca$insert), "", ca$insert)
-  
+
   # Use atom-level distances
   mds_coords <- cmdscale(dist(ca[, c("x", "y", "z")]), k = 2)
-  
+
   # Add chain info for coloring
   mds_df <- data.frame(
     residue_id = paste0(ca$resno, '_', ca$chain, '_', ca$insert),
@@ -222,22 +222,22 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
     x = mds_coords[, 1],
     y = mds_coords[, 2]
   )
-  
+
   # return
   return(mds_df)
 }
 
 .plot_chain_map = function(pdb, chain = NA, in_module = F){
-  
+
   # get mds coords
   plot_df = .mds_pdb(pdb, chain, in_module = in_module)
-  
-  # drawing contact:: 
+
+  # drawing contact::
   #geom_segment(data = edge_df, aes(x = x1, y = y1, xend = x2, yend = y2), color = "gray", alpha = 0.5)
-  
+
   # get median x and y per chain
   label_df <- aggregate(cbind(x, y) ~ chain, data = plot_df, FUN = median)
-  
+
   p1 <- ggplot2::ggplot(plot_df, ggplot2::aes(x, y, color = chain)) +
     ggplot2::geom_point(size = 2) +
     ggplot2::geom_label(data = label_df,
@@ -246,33 +246,33 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
     ggplot2::theme_void() +
     ggplot2::ggtitle("MDS Projection of C\u03b1 Coordinates by Chain") +
     ggplot2::theme(plot.margin = ggplot2::margin(10, 10, 10, 10, unit = "mm"))
-  
+
   return(p1)
-  
+
 }
 
 .auto_detect_chain = function(pep, pdb, k = 4, in_module = F){
-  
+
   # Changed to coverage instead of jaccard
   kmer_coverage <- function(pdb_seq, msa_seq) {
     # seq is too short for kmer - just return 0
     if (nchar(pdb_seq) < k || nchar(msa_seq) < k) return(0)
-    
+
     pdb_kmers <- substring(pdb_seq, 1:(nchar(pdb_seq) - k + 1), k:(nchar(pdb_seq)))
     msa_kmers <- substring(msa_seq, 1:(nchar(msa_seq) - k + 1), k:(nchar(msa_seq)))
-    
+
     # What fraction of PDB kmers are found in MSA?
     return(length(intersect(pdb_kmers, msa_kmers)) / length(pdb_kmers))
   }
-  
+
   # if not in module validate pdb (handled in .get_pdb_sequences()) #
   seq_set = .get_pdb_sequence(pdb, in_module = in_module)
-  
+
   dist = sapply(seq_set, function(x) kmer_coverage(x, pep))
-  
+
   # sort by descending order and return
   dist = sort(dist, decreasing = T)
-  
+
   return(dist)
 }
 
@@ -286,13 +286,13 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 #'
 #' @return A trimmed \code{bio3d} PDB object containing only selected chains.
 #' @export
-#' 
+#'
 #6/6 -- i dont think we will handle chain here #
 .standardize_pdb_input = function(pdb){
-  
+
   # expects single entry #
   input_class = class(pdb)[1]
-  
+
   if(input_class == 'character'){
     # !! add a check if file exists !! #
     # file.exists(msa)
@@ -304,11 +304,11 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
   } else if(!input_class == 'pdb'){
     stop('NOT ONE OF THE TWO PDB OPTIONS')
   }
-  
+
   # add residue id information #
   pdb$atom$insert[is.na(pdb$atom$insert)] = ''
   pdb$atom$residue_id = paste0(pdb$atom$resno, '_', pdb$atom$chain, '_', pdb$atom$insert)
-  
+
   # pass along pdb #
   return(pdb)
 
@@ -327,16 +327,16 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 #' @return A named character vector of sequences, one per chain.
 #' @export
 .get_pdb_sequence = function(pdb, chain = NA, in_module = F){
-  
+
   #if running in module (.standardize_pdb_input() is already run) #
   if(!in_module){
     pdb = .standardize_pdb_input(pdb)
   }
-  
+
   if(length(chain) == 1 && is.na(chain)) {
     chain = unique(pdb$atom$chain)
   }
-  
+
   # get pdb sequences with names as chains
   aa_seq = sapply(chain, function(x){
     paste0(
@@ -374,11 +374,11 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
   if(!(length(chain) == 1 && is.na(chain))) {
     pdb = bio3d::trim.pdb(pdb, chain = chain)
   }
-  
+
   # pdb should be protein only and no H (what about glycan distance?)
   pdb = bio3d::trim.pdb(pdb, 'protein')
   pdb = bio3d::trim.pdb(pdb, 'noh')
-  
+
   # METHOD IS TOO MUCH #
   # check method, maybe we are only doing backbone or sidechain
   if(distance_method == 'backbone'){
@@ -436,7 +436,7 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
   if(!method %in% c('rose', 'miller', 'theoretical_tien', 'empirical_tien')){
     message('method not recognized - setting to default: rose')
   }
-  
+
   # trim chains
   if(!(length(chain) == 1 && is.na(chain))) {
     pdb = bio3d::trim.pdb(pdb, chain = chain)
@@ -655,30 +655,30 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 #' \item{contacts}{Matrix of all atom-level contacts.}
 #' @export
 .identify_both_interface = function(pdb, chain = NULL, interface_chain = NULL, dist_cutoff = 5){
-  
+
   # remove H and HETATM
   pdb = bio3d::trim.pdb(pdb, 'protein')
   pdb = bio3d::trim.pdb(pdb, 'noh')
-  
+
   # Grab chains of interest #
   ag_c = ag_chain
   h_c = h_chain
   l_c = l_chain
-  
+
   pdb = bio3d::trim.pdb(pdb, chain = c(ag_c, h_c, l_c))
-  
+
   pdb$atom$extra = paste(pdb$atom$resno, pdb$atom$chain, pdb$atom$insert, sep = '_')
-  
+
   dist_mat = bio3d::dm.xyz(pdb$xyz, grpby = pdb$atom[,'extra'])
-  
+
   colnames(dist_mat) = rownames(dist_mat) = unique(pdb$atom$extra)
-  
+
   # grab close contacts
   close = which(dist_mat <= dist_cutoff, arr.ind = T)
   # replace pos with names
   close[, 1] = rownames(dist_mat)[close[, 1]]
   close[, 2] = colnames(dist_mat)[as.numeric(close[, 2])]
-  
+
   # filter out heavy and light from column 1
   # filter out epi from column 2
   # ** probably break if l_c or h_c missing
@@ -686,45 +686,45 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
   close = close[-grep(paste0('_', l_c, '_'), close[, 1]),]
   close = close[-grep(paste0('_', ag_c, '_'), close[, 2]),]
   rownames(close) = NULL
-  
+
   # grab epi and paratope
   epi = paste0(unique(close[,1]), collapse = '+')
   para_h = paste0(close[grepl(paste0('_', h_c, '_'), close[, 2]), 2], collapse = '+')
   para_l = paste0(close[grepl(paste0('_', l_c, '_'), close[, 2]), 2], collapse = '+')
-  
+
   return(list(
-    epitope = epi, 
-    paratope_h = para_h, 
+    epitope = epi,
+    paratope_h = para_h,
     paratope_l = para_l,
     contacts = close)
   )
 }
 
 .identify_interface = function(pdb, chain = NULL, interface_chain = NULL, dist_cutoff = 5){
-  
+
   # remove H and HETATM
   pdb = bio3d::trim.pdb(pdb, 'protein')
   pdb = bio3d::trim.pdb(pdb, 'noh')
-  
+
   # Grab chains of interest #
   pdb1 = bio3d::trim.pdb(pdb, chain = c(chain))
   pdb2 = bio3d::trim.pdb(pdb, chain = c(interface_chain))
-  
+
   # add residue_id to chain so i can recover
   pdb1$atom$chain = pdb1$atom$residue_id
-  
+
   dist_mat = bio3d::binding.site(pdb1, pdb2, cutoff = dist_cutoff)
-  
+
   interf = dist_mat$resnames
   interf = gsub('.+\\(', '', interf)
   interf = gsub('\\)', '', interf)
   interf = paste0(interf, collapse = '+')
-  
+
   # return interface window #
   # format interf_chains_interacting #
-  
+
   interf_name = paste0('interface_', paste0(chain, collapse = ''), '_', paste0(interface_chain, collapse = ''))
-  
+
   return(list(
     name = interf_name,
     interf = interf
@@ -755,34 +755,49 @@ pdb_to_patch = function(pdb, chain = NA, interface_chain = NA, occlusion_chain =
                         drop_incomplete_residue = T, rsa.method = 'rose',
                         patch.dist.cutoff = 15, patch.rsa.cutoff = 0.1,
                         patch.sasa.cutoff = NA, patch.only.exposed = T,
-                        max.patch = NA, interface.dist.cutoff = 5){
-  
-  # check if interface or occlusion is entered as 'all'
-  #if(!is.null(interface_chain) && interface_chain == 'all'){
-  #  interface_chain = NULL
-  #}
-  
+                        max.patch = NA, interface.dist.cutoff = 5, verbose = 1, detail_level = 1){
+
+  # need to validate more inputs #
+
   # split chain and occlusion chain (they dont need grouped)
   if(!(length(chain) == 1 && is.na(chain))) {
     chain <- unlist(strsplit(chain, split = ''))
   }
-  
+
   if(!(length(occlusion_chain) == 1 && is.na(occlusion_chain))) {
     occlusion_chain <- unlist(strsplit(occlusion_chain, split = ''))
   }
-  
-  # step 0: validate pdb and return pdb object
-  pdb = .standardize_pdb_input(pdb)
 
-  # step 1: retrieve sequences for chains of interest
+  # step 0: validate pdb and return pdb object ----
+  if(verbose > 0){
+    cat('\tpdb_to_patch: Standardizing PDB input\n')
+  }
+
+  pdb = .standardize_pdb_input(pdb)
+  # actually dont need because pdbs cached in wrapper #
+  # add in_wrapper flag #
+
+  # step 1: retrieve sequences for chains of interest ----
+  if(verbose > 0){
+    cat('\tpdb_to_patch: Extracting sequences for chains\n')
+  }
+
   seq_set = .get_pdb_sequence(pdb, chain = chain)
 
-  # step 2: calculate residue-wise distance matrix
+  # step 2: calculate residue-wise distance matrix ----
+  if(verbose > 0){
+    cat('\tpdb_to_patch: Calculating residue-wise distance matrix\n')
+  }
+
   residue_dist = .calculate_residue_distance(pdb, chain = chain,
                                             distance_method = distance_method,
                                             in_module = T)
-  
-  # step 3: calculate residue-wsie accessibility
+
+  # step 3: calculate residue-wsie accessibility ----
+  if(verbose > 0){
+    cat('\tpdb_to_patch: Calculating residue-wise accessibility\n')
+  }
+
   chain_set = c(chain, occlusion_chain)
   chain_set = chain_set[!is.na(chain_set)]
   residue_df = .calculate_accessibility(pdb, chain = chain_set,
@@ -790,35 +805,53 @@ pdb_to_patch = function(pdb, chain = NA, interface_chain = NA, occlusion_chain =
                                        method = rsa.method,
                                        in_module = T)
 
+  # can skip if rsa or sasa filters are 0 #
+  # just build residue df #
+
   # step 4: identify surface patches (expands residue_df)
-  #print('Step 4: Identifying surface patches')
+  if(verbose > 0){
+    cat('\tpdb_to_patch: Identifying patches\n')
+  }
+
   residue_df = .identify_patches(residue_dist,
                                 residue_df, only_exposed_in_patch = patch.only.exposed,
                                 dist_cutoff = patch.dist.cutoff,
                                 rsa_cutoff = patch.rsa.cutoff,
                                 sasa_cutoff = patch.sasa.cutoff)
-  
+
   # step 5: capture interface patches #
   if(!(length(interface_chain) == 1 && is.na(interface_chain))){
+
+    if(verbose > 0){
+      cat('\tpdb_to_patch: Identifying interface patches\n')
+    }
+
     # apply identify interface to all sets of interface chains #
     for(i in 1:length(interface_chain)){
       int_ch = unlist(strsplit(interface_chain[i], split = ''))
       interface_patches = .identify_interface(pdb, chain = chain, interface_chain = int_ch, dist_cutoff = interface.dist.cutoff)
-      
+
       # add to residue df #
       residue_df[nrow(residue_df)+1,] = NA
       residue_df$residue_id[nrow(residue_df)] = interface_patches$name
       residue_df$patch[nrow(residue_df)] = interface_patches$interf
     }
-    
+
   }
+
+  # could change call from loop to apply, but this is fine for now #
+
+  # detail level will control return #
+  # 0 - just pdb obj, seq_set, and residue_df
+  # 1 - pdb obj, seq_set, residue_df, and chain
+  # 2 - all
 
   # return list object
   return(list(
     pdb = pdb,
-    chain = chain,
+    chain = if (detail_level > 0) chain else NULL,
     seq_set = seq_set,
-    residue_dist = residue_dist,
+    residue_dist = if (detail_level > 1) residue_dist else NULL,
     residue_df = residue_df
   ))
 

@@ -1,11 +1,27 @@
 # ------------------------------------------ #
-# ANALYSIS_UTILS.R 
+# ANALYSIS_UTILS.R
 # utilities for msa statistics and writing outputs
-# Brad Broyles 
+# Brad Broyles
 # ------------------------------------------ #
 
 
 # .write_patch_fastas() ----
+
+
+write_patch_fastas_slow = function(msa_subsets, output_dir = 'patch_fastas') {
+  if (!dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  }
+
+  file_paths <- file.path(output_dir, paste0(names(msa_subsets), ".fa"))
+  for (i in seq_along(msa_subsets)) {
+    fa_mat <- msa_subsets[[i]]
+    seqs <- do.call(paste0, as.data.frame(fa_mat, stringsAsFactors = FALSE))
+    lines <- paste0(">", row.names(fa_mat), "\n", seqs)
+    writeLines(lines, con = file_paths[i])
+  }
+}
+
 
 #' Write Patch-Level MSA Subsets to FASTA Files
 #'
@@ -17,27 +33,35 @@
 #'
 #' @return Invisibly returns \code{NULL}. Files are written to disk.
 #' @export
-write_patch_fastas = function(msa_subsets, output_dir = 'patch_fastas'){
-  # nuc_patches is from map_patches_to_nucleotides()
-  # fasta dir for saving files
-  # save.file to save files or if F return list of fastas
-  
-  # create dir if it doesn't exist
-  if(!dir.exists(output_dir)){
-    dir.create(output_dir, recursive = T)
+write_patch_fastas <- function(msa_subsets, output_dir = "patch_fastas") {
+  temp_dir <- tempfile("patch_fastas_")
+  dir.create(temp_dir)
+
+  for (i in seq_along(msa_subsets)) {
+    fa_mat <- msa_subsets[[i]]
+    seqs <- do.call(paste0, as.data.frame(fa_mat, stringsAsFactors = FALSE))
+    lines <- paste0(">", row.names(fa_mat), "\n", seqs)
+    writeLines(lines, file.path(temp_dir, paste0(names(msa_subsets)[i], ".fa")))
   }
-  
-  for(i in 1:length(msa_subsets)){
-    fa = msa_subsets[[i]]
-    fa = apply(fa, 1, paste, collapse = '')
-    fname = paste0(output_dir, '/', names(msa_subsets)[[i]], '.fa')
-    
-    # fix fasta seqs for writing
-    fa = paste0('>', names(fa), '\n', fa, '\n')
-    cat(fa, sep = '', file = fname)
-  }
-  
+
+  # Set wd to temp_dir for relative tar
+  old_wd <- getwd()
+  setwd(temp_dir)
+  on.exit(setwd(old_wd), add = TRUE)  # protect session even on failure
+
+  tar_path <- tempfile(fileext = ".tar.gz")
+  utils::tar(tarfile = tar_path, files = list.files(), compression = "gzip")
+
+  setwd(old_wd)  # <-- move back BEFORE untar
+  dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+  utils::untar(tarfile = tar_path, exdir = output_dir)
+
+  unlink(temp_dir, recursive = TRUE)
+  unlink(tar_path)
 }
+
+
+
 
 
 # .write_patch_pymol() ----
@@ -62,7 +86,7 @@ write_patch_pymol = function(patches){
   # expecting a data.frame with patch column #
   # patches will be converted to pymol selection commands
   # patch numbered to order in patches data.frame
-  
+
   # for each row generate pymol command for selecting patch
   cmd_list = c()
   for(i in 1:nrow(patches)){
@@ -72,7 +96,7 @@ write_patch_pymol = function(patches){
     patch$chain = gsub('^[^_]+_', '', patch$id)
     patch$ins = gsub('^[^_]+_', '', patch$chain)
     patch$chain = gsub('_.*', '', patch$chain)
-    
+
     # each resi set should be paired with chain and patch
     patch_cmd = c()
     for(ch in unique(patch$chain)){
@@ -80,32 +104,32 @@ write_patch_pymol = function(patches){
       cmd = paste0('resi ', resi, ' and chain ', ch)
       patch_cmd[length(patch_cmd)+1] = cmd
     }
-    
-    # combine patch_cmd into final output 
+
+    # combine patch_cmd into final output
     cmd = paste0('select patch_', i, ', ', paste0('(', patch_cmd, ')', collapse = ' or '))
-    
+
     cmd_list[i] = cmd
   }
-  
+
   # copy and paste this into pymol patches #
   #cat(cmd_list, sep = '\n')
-  
+
   # get color per patch #
   colors <- grDevices::hcl.colors(nrow(patches), palette = 'Dynamic')
   colors = gsub('#', '', colors)
   colors = colors[sample(1:length(colors))]
   color_cmd = paste0('color 0x', colors, ', patch_', 1:nrow(patches))
-  
+
   # copy and paste this into pymol for colors #
   #cat(color_cmd, sep = '\n')
-  
+
   # last generate color black for all centroids #
   centroid = data.frame(id = patches$residue_id)
   centroid$resno = gsub('_.*', '', centroid$id)
   centroid$chain = gsub('^[^_]+_', '', centroid$id)
   centroid$ins = gsub('^[^_]+_', '', centroid$chain)
   centroid$chain = gsub('_.*', '', centroid$chain)
-  
+
   # could exist on different chains #
   centroid_cmd = list()
   for(ch in unique(centroid$chain)){
@@ -113,17 +137,17 @@ write_patch_pymol = function(patches){
     cmd = paste0('resi ', resi, ' and chain ', ch)
     centroid_cmd[length(centroid_cmd)+1] = cmd
   }
-  
-  # combine patch_cmd into final output 
+
+  # combine patch_cmd into final output
   centroid_cmd = paste0('select centroid, ', paste0('(', centroid_cmd, ')', collapse = ' or '))
   centroid_cmd[2] = 'color black, centroid'
-  
+
   # copy and paste this into pymol patches #
   #cat(centroid_cmd, sep = '\n')
-  
+
   # return these cmds for pymol #
-  return(list(patches = cmd_list, 
-              colors = color_cmd, 
+  return(list(patches = cmd_list,
+              colors = color_cmd,
               centroid = centroid_cmd))
 }
 
@@ -148,12 +172,12 @@ write_patch_pymol = function(patches){
 #'
 #' @return No R return value. A PDB file is written to \code{outfile} with modified B-factor values.
 #' @export
-write_stat_to_bfactor = function(evo3d_results, pdb_id = 1, stat_name = 'tajima', outfile = 'test.pdb', 
+write_stat_to_bfactor = function(evo3d_results, pdb_id = 1, stat_name = 'tajima', outfile = 'test.pdb',
                                   mapped_chains_only = TRUE, scale_up_pi = FALSE, adjust_NA_stats = -10){
-  
+
   # check if pdb column has pdb1 tags or not #
   multi_run = any(grepl('pdb1', evo3d_results$evo3d_df))
-  
+
   # set up pdb column to grab #
   if(!multi_run){
     pdb_col = 'residue_id'
@@ -161,37 +185,37 @@ write_stat_to_bfactor = function(evo3d_results, pdb_id = 1, stat_name = 'tajima'
   } else {
     pdb_col = paste0('pdb', pdb_id, '_residue_id')
   }
-  
+
   # grab pdb #
   pdb_name = paste0('pdb', pdb_id)
   pdb = evo3d_results$pdb_info_sets[[pdb_name]]$pdb
-  
+
   # --- #
   patch_df = evo3d_results$evo3d_df
-  
-  # --- # 
+
+  # --- #
   if(mapped_chains_only){
     grid = evo3d_results$call_info$run_grid
     chain = grid$chain[which(grid$pdb == pdb_name)]
     pdb = bio3d::trim.pdb(pdb, chain = chain)
   }
-  
-  # if stat is NA convert to 0 # 
+
+  # if stat is NA convert to 0 #
   #patch_df[is.na(patch_df[stat_name]), stat_name] = 0
-  
+
   # set pdb insert to '' if NA
   pdb$atom$ins[is.na(pdb$atom$ins)] = ''
   pdb$atom$residue_id = paste(pdb$atom$resno, pdb$atom$chain, pdb$atom$ins, sep = '_')
-  
+
   # get the stat values
   stat = patch_df[match(pdb$atom$residue_id, patch_df[[pdb_col]]), stat_name]
-  
+
   # if pi is too low for pymol scale up -- print message #
   if(scale_up_pi && stat_name == 'pi') {
-    # what is non zero non NA min # 
+    # what is non zero non NA min #
     # dictates scaling factor #
     min_pi = min(stat[!is.na(stat) & stat > 0])
-    
+
     if(min_pi < 0.01){
       scale_factor = -floor(log10(min_pi))
       scale_factor = scale_factor - 2 # just want to move into 0.01
@@ -199,18 +223,18 @@ write_stat_to_bfactor = function(evo3d_results, pdb_id = 1, stat_name = 'tajima'
       message(paste0('Scaling up pi values by 10^', scale_factor, ' for visualization.'))
     }
   }
-  
+
   # use residue id (resno_chain_ins) to match to pdb #
   pdb$atom$b = patch_df[match(pdb$atom$residue_id, patch_df[[pdb_col]]), stat_name]
   pdb$atom$b = round(pdb$atom$b, 2)
   pdb$atom$b = ifelse(is.na(pdb$atom$b), adjust_NA_stats, pdb$atom$b)
-  
-  
-  
+
+
+
   # drop residue ID, and write
   pdb$atom = pdb$atom[,!names(pdb$atom) %in% c('residue_id')]
   bio3d::write.pdb(pdb = pdb, b = pdb$atom$b, file = outfile)
-  
+
 }
 
 # run_pegas_three() ----
@@ -231,59 +255,59 @@ write_stat_to_bfactor = function(evo3d_results, pdb_id = 1, stat_name = 'tajima'
 #' including columns for each requested statistic.
 #' @export
 run_pegas_three = function(msa, residue_df = NULL, stat = c('pi', 'tajima', 'hap')) {
-  
+
   # Convert single MSA to list for consistent handling
   if (!is.list(msa)) {
     msa = list(msa)
   }
-  
+
   # Now everything is a list - one code path!
   seqs = ape::as.DNAbin.list(msa)
-  
-  # Handle naming consistently 
+
+  # Handle naming consistently
   if (is.null(names(msa))) {
     names(msa) = paste0('msa_', 1:length(msa))
     #names(seqs) = names(msa)  # sync the names
   }
-  
+
   # if residue_df is provided we can add results to residue_df // else make a dataframe #
   if (is.null(residue_df)) {
     residue_df = data.frame(msa_subset_id = names(msa), stringsAsFactors = F)
   }
-  
+
   # check for pi #
   if('pi' %in% stat) {
     pi = lapply(seqs, pegas::nuc.div)
     names(pi) = names(msa)
-    
+
     residue_df$pi = NA
     residue_df$pi[match(names(pi), residue_df$msa_subset_id)] = unlist(pi)
   }
-  
+
   # check for tajima #
   if('tajima' %in% stat) {
     taj = lapply(seqs, pegas::tajima.test)
     names(taj) = names(msa)
-    
+
     residue_df$tajima = NA
     residue_df$tajima_pnormal = NA
     residue_df$tajima_pbeta = NA
-    
+
     residue_df$tajima[match(names(taj), residue_df$msa_subset_id)] = unlist(lapply(taj, function(x) x[1]))
     residue_df$tajima_pnormal[match(names(taj), residue_df$msa_subset_id)] = unlist(lapply(taj, function(x) x[2]))
     residue_df$tajima_pbeta[match(names(taj), residue_df$msa_subset_id)] = unlist(lapply(taj, function(x) x[3]))
   }
-  
+
   # check for hap #
   if('hap' %in% stat) {
     hap = lapply(seqs, pegas::hap.div) # gives warnings if gaps present (okay?) -- also makes more hap than needed if ambiguity
     names(hap) = names(msa)
-    
+
     residue_df$hap = NA
-    
+
     residue_df$hap[match(names(hap), residue_df$msa_subset_id)] = unlist(hap)
   }
-  
+
   return(residue_df)
 }
 
@@ -309,17 +333,17 @@ run_pegas_three = function(msa, residue_df = NULL, stat = c('pi', 'tajima', 'hap
 calculate_polymorphic_residue = function(msa_info_sets, residue_df, valid_aa_only = TRUE){
 
   aa_vector = strsplit('AVILMWYFSTNQCGPRHKDE', '')[[1]]
-  
+
   # is it extended? #
   if(!'msa' %in% colnames(residue_df)) {
     # only one info set #
     msa = msa_info_sets$msa1$msa_mat
-    
+
     # handle residue_df null later #
     aa_set = t(apply(msa, 1, seqinr::translate))
-    
+
     x = apply(aa_set, 2, table)
-    
+
     # Check polymorphism for each codon position
     polymorphic = sapply(x, function(pos_table) {
       if(valid_aa_only) {
@@ -329,7 +353,7 @@ calculate_polymorphic_residue = function(msa_info_sets, residue_df, valid_aa_onl
         length(pos_table[pos_table > 0]) > 1
       }
     })
-    
+
     # Calculate Shannon entropy for each position
     entropy = sapply(x, function(pos_table) {
       if(valid_aa_only) {
@@ -338,37 +362,37 @@ calculate_polymorphic_residue = function(msa_info_sets, residue_df, valid_aa_onl
       } else {
         valid_counts = pos_table[pos_table > 0]
       }
-      
+
       if(length(valid_counts) == 0) return(0)
-      
+
       freqs = valid_counts / sum(valid_counts)
       -sum(freqs * log2(freqs))
     })
-    
+
     # add to residue_df -- only where there are codons #
     codon_ro = which(!is.na(residue_df$codon))
-    
+
     residue_df$polymorphic = NA
     residue_df$polymorphic[codon_ro] = as.integer(polymorphic)
-    
+
     residue_df$site_entropy = NA
     residue_df$site_entropy[codon_ro] = entropy
   } else {
     # it is extneded data in which we need to cycle through msas #
     residue_df$polymorphic = NA
     residue_df$site_entropy = NA
-    
+
     msa_ids = unique(residue_df$msa)
     msa_ids = msa_ids[!is.na(msa_ids)]
     for(id in msa_ids){
       msa_name = paste0('msa', id)
       msa = msa_info_sets[[msa_name]]$msa_mat
-      
+
       # handle residue_df null later #
       aa_set = t(apply(msa, 1, seqinr::translate))
-      
+
       x = apply(aa_set, 2, table)
-      
+
       # Check polymorphism for each codon position
       polymorphic = sapply(x, function(pos_table) {
         if(valid_aa_only) {
@@ -378,7 +402,7 @@ calculate_polymorphic_residue = function(msa_info_sets, residue_df, valid_aa_onl
           length(pos_table[pos_table > 0]) > 1
         }
       })
-      
+
       # Calculate Shannon entropy for each position
       entropy = sapply(x, function(pos_table) {
         if(valid_aa_only) {
@@ -387,26 +411,26 @@ calculate_polymorphic_residue = function(msa_info_sets, residue_df, valid_aa_onl
         } else {
           valid_counts = pos_table[pos_table > 0]
         }
-        
+
         if(length(valid_counts) == 0) return(0)
-        
+
         freqs = valid_counts / sum(valid_counts)
         -sum(freqs * log2(freqs))
       })
-      
+
       # add to residue_df -- only where there are codons #
       codon_ro = which(!is.na(residue_df$codon))
       msa_ro = which(residue_df$msa == id)
       codon_ro = intersect(codon_ro, msa_ro)
       codon_ro = sort(codon_ro)
-      
+
       residue_df$polymorphic[codon_ro] = as.integer(polymorphic)
-      
+
       residue_df$site_entropy[codon_ro] = entropy
-      
+
     }
   }
-  
+
   return(
     residue_df
   )
@@ -433,27 +457,27 @@ calculate_patch_entropy = function(msa, residue_df = NULL, valid_aa_only = TRUE)
     msa = list(msa)
   }
 
-  # Handle naming consistently 
+  # Handle naming consistently
   if (is.null(names(msa))) {
     names(msa) = paste0('msa_', 1:length(msa))
     #names(seqs) = names(msa)  # sync the names
   }
-  
+
   # if residue_df is provided we can add results to residue_df // else make a dataframe #
   if (is.null(residue_df)) {
     residue_df = data.frame(msa_subset_id = names(msa), stringsAsFactors = F)
   }
-  
+
   seq_set = lapply(msa, function(x){
     t(apply(x, 1, seqinr::translate))
   })
-  
+
   aa_vector = strsplit('AVILMWYFSTNQCGPRHKDE', '')[[1]]
-  
+
   # Calculate Shannon entropy for each MSA subset (averaged over columns)
   entropy = lapply(seq_set, function(aa_matrix) {
     if(ncol(aa_matrix) == 0) return(0)
-    
+
     # Calculate entropy for each column (position)
     col_entropies = apply(aa_matrix, 2, function(col) {
       if(valid_aa_only) {
@@ -461,26 +485,26 @@ calculate_patch_entropy = function(msa, residue_df = NULL, valid_aa_only = TRUE)
       } else {
         valid_aas = col[!is.na(col)]
       }
-      
+
       if(length(valid_aas) == 0) return(0)
-      
+
       aa_counts = table(valid_aas)
       aa_freqs = aa_counts / sum(aa_counts)
-      
+
       # Shannon entropy
       -sum(aa_freqs * log2(aa_freqs))
     })
-    
+
     # Return average entropy across positions in patch
     mean(col_entropies, na.rm = TRUE)
   })
-  
-  
+
+
   # Add entropy results to residue_df
   residue_df$patch_entropy = NA
   residue_df$patch_entropy[match(names(entropy), residue_df$msa_subset_id)] = unlist(entropy)
-  
+
   return(residue_df)
-  
+
 }
 

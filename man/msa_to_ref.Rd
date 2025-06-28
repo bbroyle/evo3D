@@ -4,7 +4,13 @@
 \alias{msa_to_ref}
 \title{Extract Reference and Peptide Sequence from MSA}
 \usage{
-msa_to_ref(msa, ref_method = 1, force_seqtype = NULL, genetic_code = 1)
+msa_to_ref(
+  msa,
+  ref_method = 1,
+  force_seqtype = NULL,
+  genetic_code = 1,
+  verbose = 0
+)
 }
 \arguments{
 \item{msa}{A character file path to a FASTA file, a matrix, or an object returned by \code{bio3d::read.fasta()}.}

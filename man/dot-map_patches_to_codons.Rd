@@ -28,3 +28,4 @@ based on a dual-layer alignment matrix produced by \code{.map_aln_to_positions()
 This function creates \code{codon_patch} strings for each residue, encoding the codons that make up its structural context.
 Also assigns a unique \code{msa_subset_id} used for downstream patch extraction.
 }
+\keyword{internal}

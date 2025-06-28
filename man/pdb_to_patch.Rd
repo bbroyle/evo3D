@@ -17,7 +17,9 @@ pdb_to_patch(
   patch.sasa.cutoff = NA,
   patch.only.exposed = T,
   max.patch = NA,
-  interface.dist.cutoff = 5
+  interface.dist.cutoff = 5,
+  verbose = 1,
+  detail_level = 1
 )
 }
 \arguments{

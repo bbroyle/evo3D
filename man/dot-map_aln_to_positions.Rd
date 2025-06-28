@@ -23,3 +23,4 @@ mapping of structural patches to nucleotide-level coordinates.
 \details{
 Typically used after \code{.align_sequences()} and \code{identify_patches()} to annotate alignment matrix rows.
 }
+\keyword{internal}

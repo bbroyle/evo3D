@@ -22,3 +22,4 @@ derived from 3D structural neighborhoods. Each subset corresponds to a structura
 Assumes codon numbering starts at 1, with codon 1 = positions 1:3 in the MSA, codon 2 = 4:6, etc.
 Used internally to extract windows for diversity and selection analysis.
 }
+\keyword{internal}

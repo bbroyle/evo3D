@@ -8,8 +8,8 @@ aln_msa_to_pdb(
   msa_info,
   pdb_info,
   chain = NA,
-  coverage_plot = FALSE,
-  drop_unused_residues = TRUE
+  drop_unused_residues = TRUE,
+  verbose = 1
 )
 }
 \arguments{
@@ -18,8 +18,6 @@ aln_msa_to_pdb(
 \item{pdb_info}{A named list output from \code{WRAPPER_pdb_to_patch()}, including PDB-derived sequences and residue/patch annotations.}
 
 \item{chain}{Character string indicating the chain to analyze. Required.}
-
-\item{coverage_plot}{Logical; if \code{TRUE}, alignment coverage plot will be shown.}
 
 \item{drop_unused_residues}{Logical; if \code{TRUE}, drops PDB residues not linked to codon-level info.}
 }
