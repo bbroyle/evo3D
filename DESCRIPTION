@@ -18,6 +18,7 @@ Imports:
     ggplot2,
     ggrepel,
     ape, 
-    pegas
+    pegas,
+    jsonlite
 Suggests:
     msa
