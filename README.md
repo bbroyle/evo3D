@@ -1,4 +1,5 @@
-# evo3D
+# evo3D -- in development (though analysis run currently are correct)
+# adjusting documentation and handling of poorly matching data #
 <img src="man/figures/evo3d_hex_b.png" width="200"/>
 
 An R package for structure-aware population genetics, enabling selection and diversity analysis over sliding "patch" windows of protein surfaces (or structures in general). A wide range of analysis can be completed through the simple wrapper run_evo3d(), with the underlying modules ( msa_to_ref(), pdb_to_patch(), and aln_msa_to_pdb() ) also available for tailored use.
