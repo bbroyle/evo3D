@@ -1,11 +1,10 @@
 # --------------------------------------------------------------- #
-# PDB MODULE goal is to return pdb_info list
-# 1. pdb object
-# 2.
+# PDB MODULE -- utilities for taking PDB and mmCIF data and returning standardized pdb_info #
+# bonus functions for downloading PDB's of interest and plotting chains #
+# internal .functions() are wrapped with external pdb_to_patch() module
 #
-# DEV NOTES:
-# 1. should mds proj be saved so I dont have to remake them
-# 2.
+# NOTES:
+#
 # email me: bbroyle@purdue.edu
 # --------------------------------------------------------------- #
 
@@ -251,6 +250,7 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 
 }
 
+# this should move to aln module #
 .auto_detect_chain = function(pep, pdb, k = 4, in_module = F){
 
   # Changed to coverage instead of jaccard
@@ -285,29 +285,45 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 #' @param chain Character vector of chain IDs, or \code{"all"}. # REMOVED 5/4
 #'
 #' @return A trimmed \code{bio3d} PDB object containing only selected chains.
-#' @export
+#' @internal
 #'
 #6/6 -- i dont think we will handle chain here #
-.standardize_pdb_input = function(pdb){
+.standardize_pdb_input = function(pdb, force_file_type = NULL){
 
   # expects single entry #
   input_class = class(pdb)[1]
 
   if(input_class == 'character'){
-    # !! add a check if file exists !! #
-    # file.exists(msa)
-    if(grepl('cif$', pdb)){
-      pdb = bio3d::read.cif(pdb)
+    if(!file.exists(pdb)){
+      stop('PDB file does not exist: ', pdb)
+    }
+
+    if(!is.null(force_file_type)){
+      if(force_file_type == 'cif'){
+        pdb = bio3d::read.cif(pdb)
+      } else if(force_file_type == 'pdb'){
+        pdb = bio3d::read.pdb(pdb)
+      } else {
+        stop('Invalid force_file_type. Use "cif" or "pdb".')
+      }
     } else {
-      pdb = bio3d::read.pdb(pdb)
+      if(grepl('cif$', pdb)){
+        pdb = bio3d::read.cif(pdb)
+      } else {
+        pdb = bio3d::read.pdb(pdb)
+      }
     }
   } else if(!input_class == 'pdb'){
-    stop('NOT ONE OF THE TWO PDB OPTIONS')
+    # print i dont know what you have #
+    stop('pdb provided is not a recognized format. Please provide a file path, an object from bio3d::read.pdb(), or an object from bio3d::read.cif().')
   }
 
   # add residue id information #
   pdb$atom$insert[is.na(pdb$atom$insert)] = ''
   pdb$atom$residue_id = paste0(pdb$atom$resno, '_', pdb$atom$chain, '_', pdb$atom$insert)
+
+  # Thoughts to remove hetatm -- but they are all present for now #
+  # could even pass interface / occlusion as HETATOM in future #
 
   # pass along pdb #
   return(pdb)
@@ -585,7 +601,7 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
   # dont really need this res_id checking ***
   res_ids = intersect(rownames(dist_mat), accessibility_df$residue_id)
 
-  # get centroids
+  # get centroids (amino acids that count as seed for patch)
   if(!is.null(rsa_cutoff)){
     centroids = accessibility_df[accessibility_df$rsa >= rsa_cutoff &
                                    accessibility_df$residue_id %in% res_ids,]
@@ -654,52 +670,6 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 #' \item{paratope_l}{Light chain contact residues.}
 #' \item{contacts}{Matrix of all atom-level contacts.}
 #' @export
-.identify_both_interface = function(pdb, chain = NULL, interface_chain = NULL, dist_cutoff = 5){
-
-  # remove H and HETATM
-  pdb = bio3d::trim.pdb(pdb, 'protein')
-  pdb = bio3d::trim.pdb(pdb, 'noh')
-
-  # Grab chains of interest #
-  ag_c = ag_chain
-  h_c = h_chain
-  l_c = l_chain
-
-  pdb = bio3d::trim.pdb(pdb, chain = c(ag_c, h_c, l_c))
-
-  pdb$atom$extra = paste(pdb$atom$resno, pdb$atom$chain, pdb$atom$insert, sep = '_')
-
-  dist_mat = bio3d::dm.xyz(pdb$xyz, grpby = pdb$atom[,'extra'])
-
-  colnames(dist_mat) = rownames(dist_mat) = unique(pdb$atom$extra)
-
-  # grab close contacts
-  close = which(dist_mat <= dist_cutoff, arr.ind = T)
-  # replace pos with names
-  close[, 1] = rownames(dist_mat)[close[, 1]]
-  close[, 2] = colnames(dist_mat)[as.numeric(close[, 2])]
-
-  # filter out heavy and light from column 1
-  # filter out epi from column 2
-  # ** probably break if l_c or h_c missing
-  close = close[-grep(paste0('_', h_c, '_'), close[, 1]),]
-  close = close[-grep(paste0('_', l_c, '_'), close[, 1]),]
-  close = close[-grep(paste0('_', ag_c, '_'), close[, 2]),]
-  rownames(close) = NULL
-
-  # grab epi and paratope
-  epi = paste0(unique(close[,1]), collapse = '+')
-  para_h = paste0(close[grepl(paste0('_', h_c, '_'), close[, 2]), 2], collapse = '+')
-  para_l = paste0(close[grepl(paste0('_', l_c, '_'), close[, 2]), 2], collapse = '+')
-
-  return(list(
-    epitope = epi,
-    paratope_h = para_h,
-    paratope_l = para_l,
-    contacts = close)
-  )
-}
-
 .identify_interface = function(pdb, chain = NULL, interface_chain = NULL, dist_cutoff = 5){
 
   # remove H and HETATM
@@ -731,7 +701,6 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
   ))
 }
 
-
 #' Extract Surface Patches from PDB
 #'
 #' High-level wrapper for computing sequences, distances, solvent accessibility, and patches from a PDB structure.
@@ -752,10 +721,11 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 #' @export
 pdb_to_patch = function(pdb, chain = NA, interface_chain = NA, occlusion_chain = NA,
                         distance_method = 'all',
-                        drop_incomplete_residue = T, rsa.method = 'rose',
-                        patch.dist.cutoff = 15, patch.rsa.cutoff = 0.1,
-                        patch.sasa.cutoff = NA, patch.only.exposed = T,
-                        max.patch = NA, interface.dist.cutoff = 5, verbose = 1, detail_level = 1){
+                        drop_incomplete_residue = T, rsa_method = 'rose',
+                        patch_dist_cutoff = 15, patch_rsa_cutoff = 0.1,
+                        patch_sasa_cutoff = NA, patch_exposed_only = T,
+                        max_patch = NULL, interface_dist_cutoff = 5, verbose = 1, detail_level = 1,
+                        force_file_type = NULL){
 
   # need to validate more inputs #
 
@@ -773,7 +743,7 @@ pdb_to_patch = function(pdb, chain = NA, interface_chain = NA, occlusion_chain =
     cat('\tpdb_to_patch: Standardizing PDB input\n')
   }
 
-  pdb = .standardize_pdb_input(pdb)
+  pdb = .standardize_pdb_input(pdb, force_file_type)
   # actually dont need because pdbs cached in wrapper #
   # add in_wrapper flag #
 
@@ -802,7 +772,7 @@ pdb_to_patch = function(pdb, chain = NA, interface_chain = NA, occlusion_chain =
   chain_set = chain_set[!is.na(chain_set)]
   residue_df = .calculate_accessibility(pdb, chain = chain_set,
                                        drop_incomplete = drop_incomplete_residue,
-                                       method = rsa.method,
+                                       method = rsa_method,
                                        in_module = T)
 
   # can skip if rsa or sasa filters are 0 #
@@ -814,10 +784,11 @@ pdb_to_patch = function(pdb, chain = NA, interface_chain = NA, occlusion_chain =
   }
 
   residue_df = .identify_patches(residue_dist,
-                                residue_df, only_exposed_in_patch = patch.only.exposed,
-                                dist_cutoff = patch.dist.cutoff,
-                                rsa_cutoff = patch.rsa.cutoff,
-                                sasa_cutoff = patch.sasa.cutoff)
+                                residue_df, only_exposed_in_patch = patch_exposed_only,
+                                dist_cutoff = patch_dist_cutoff,
+                                rsa_cutoff = patch_rsa_cutoff,
+                                sasa_cutoff = patch_sasa_cutoff,
+                                max_patch = max_patch)
 
   # step 5: capture interface patches #
   if(!(length(interface_chain) == 1 && is.na(interface_chain))){
@@ -829,7 +800,7 @@ pdb_to_patch = function(pdb, chain = NA, interface_chain = NA, occlusion_chain =
     # apply identify interface to all sets of interface chains #
     for(i in 1:length(interface_chain)){
       int_ch = unlist(strsplit(interface_chain[i], split = ''))
-      interface_patches = .identify_interface(pdb, chain = chain, interface_chain = int_ch, dist_cutoff = interface.dist.cutoff)
+      interface_patches = .identify_interface(pdb, chain = chain, interface_chain = int_ch, dist_cutoff = interface_dist_cutoff)
 
       # add to residue df #
       residue_df[nrow(residue_df)+1,] = NA

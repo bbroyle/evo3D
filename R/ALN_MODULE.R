@@ -70,75 +70,6 @@
   return(covered_regions)
 }
 
-# .plot_coverage() ----
-
-# ** remove this function for now ** #
-
-# #' Plot Sequence Alignment Coverage
-# #'
-# #' Visualizes aligned coverage regions as horizontal bars for each sequence.
-# #' Currently only supports range-style input (e.g., \code{"5:25"}), with placeholder handling for mismatches.
-# #'
-# #' @param coverage A named list of ranges (e.g., from \code{.calculate_coverage()}), with each element representing a sequence.
-# #'
-# #' @return A \code{ggplot2} plot object for visual inspection of coverage.
-# #' @examples
-# #' \dontrun{
-# #' coverage <- .calculate_coverage(aln_matrix)
-# #' plot <- .plot_coverage(coverage)
-# #' print(plot)
-# #' }
-# #' @keywords internal
-# .plot_coverage = function(coverage) {
-#   # convert coverage to data frame for plotting
-#   plot_data <- data.frame(
-#     sequence = character(),
-#     start = numeric(),
-#     end = numeric(),
-#     stringsAsFactors = FALSE
-#   )
-#
-#   # see if mismatch has ranges or if it is NA #
-#   if(is.na(coverage$mismatch[1])){
-#     coverage$mismatch = '0:0'
-#   }
-#
-#   for (seq_name in names(coverage)) {
-#     ranges <- coverage[[seq_name]]
-#     for (range in ranges) {
-#       range_parts <- as.numeric(strsplit(range, ":")[[1]])
-#       plot_data <- rbind(plot_data, data.frame(
-#         sequence = seq_name,
-#         start = range_parts[1],
-#         end = range_parts[2],
-#         stringsAsFactors = FALSE
-#       ))
-#     }
-#   }
-#
-#   # shrink name if too long (max 20 char then ...) #
-#   plot_data$sequence = apply(plot_data, 1, function(x) {
-#     if (nchar(x[1]) > 20) {
-#       return(paste0(substr(x[1], 1, 20), " ..."))
-#     } else {
-#       return(x[1])
-#     }
-#   })
-#
-#   plot_data$sequence = factor(plot_data$sequence, levels = unique(plot_data$sequence))
-#
-#   # *** STILL NEED TO INCORPORATE MISMATCH POINTS *** #
-#   plot <- ggplot2::ggplot(plot_data, ggplot2::aes(x = start, xend = end, y = sequence, yend = sequence)) +
-#     ggplot2::geom_segment(linewidth = 3) +
-#     ggplot2::theme_bw() +
-#     ggplot2::xlab("Alignment Position") +
-#     ggplot2::ylab("Sequence")
-#
-#   return(plot)
-#
-# }
-
-
 # .align_sequences() ----
 
 #' Align Reference and PDB Sequences
@@ -181,7 +112,7 @@
 
   # use msa::msa() ~ with baked in clustal omega (defualt to GONNET sub matrix)
     # could make invisible()
-  aln = suppressMessages(msa::msa(sequences, method = 'ClustalOmega', type = 'protein', order = 'input'))
+  aln = suppressMessages(msa::msa(sequences, method = 'ClustalOmega', type = 'protein', order = 'input', substitutionMatrix = 'BLOSUM65'))
 
   aln_set = as.character(aln@unmasked)
   aln_chars = strsplit(aln_set, '')
@@ -275,15 +206,17 @@
   # msa are not built yet but the column is present when it is needed #
   # keeps submodular functions behaving well outside of modules and wrappers #
 
+  # 7/2/25 -- change order of codon df #
+
   # Create base df from ALL codons in pos_mat
   all_codons = pos_aln[1,]
   all_residues = pos_aln[2,]
 
   # Start with codon-based rows
   codon_df = data.frame(
+    codon = all_codons,
     residue_id = all_residues,
     codon_patch = NA,
-    codon = all_codons,
     stringsAsFactors = FALSE
   )
 
@@ -291,9 +224,9 @@
   non_codon_residues = residue_df$residue_id[!residue_df$residue_id %in% all_residues]
   if(length(non_codon_residues) > 0){
     extra_df = data.frame(
+      codon = NA,
       residue_id = non_codon_residues,
       codon_patch = NA,
-      codon = NA,
       stringsAsFactors = FALSE
     )
     codon_df = rbind(codon_df, extra_df)
@@ -324,7 +257,7 @@
 
   # ADD msa_subset_id to table #
   codon_df$msa_subset_id = ifelse(
-    !is.na(codon_df$codon),
+    !is.na(codon_df$codon) & codon_df$codon != '-',
     paste0('codon_', codon_df$codon),
     ifelse(
       grepl('^interface', codon_df$residue_id),
@@ -332,6 +265,9 @@
       paste0('residue_', codon_df$residue_id)  # numeric residues need prefix
     )
   )
+
+  # if codon_patch is NA then no msa_subset_id #
+  codon_df$msa_subset_id[is.na(codon_df$codon_patch)] = NA
 
   return(codon_df)
 }
@@ -408,41 +344,70 @@
 #'   \item{msa_subsets}{Named list of nucleotide MSA matrices, one per patch.}
 #' }
 #' @export
-aln_msa_to_pdb = function(msa_info, pdb_info, chain = NA, drop_unused_residues = TRUE, verbose = 1){
+aln_msa_to_pdb = function(msa_info, pdb_info, chain = 'auto', drop_unused_residues = TRUE, verbose = 1){
+
+  # 7/2/25 edit -- msa_subset_id is NA if no subset is built #
 
   # msa_info ~ must be list object from WRAPPER_msa #
   # pdb_info ~ must be list object from WRAPPER_pdb #
 
-  # chain must be specified
-  if(missing(chain) || any(is.na(chain))) {
-    stop("Chain must be specified. Use .auto_detect_chain() for automatic detection.")
+  # step 0: prep data ----
+  # chain must be specified or 'auto'
+  if(chain == 'auto') {
+    chain = .auto_detect_chain(msa_info$pep, pdb_info$pdb)
+    cat('\tDetected chain:', names(chain)[1], '\n')
+    cat('\tAt', round(chain[1], 3) * 100, '% identity', '\n')
+    chain = names(chain)[1]  # use the first chain detected
   }
 
-  # step 0: prep data #
-  pep = msa_info$pep
-  seq = pdb_info$seq_set[chain]
-
+  # grab sequence info and residue df #
   residue_df = pdb_info$residue_df
 
-  # step 1: align sequences # #NOTE LETS MOVE COVERAGE PLOT OUTSIDE ALIGNMENTS #
+  pep = msa_info$pep
+  seq = pdb_info$seq_set[chain]
+  if(any(is.na(seq))){
+    stop(paste0('No sequence found for chain ', chain, '. Check PDB input.'))
+  }
+
+  # step 1: align sequences ----
   if(verbose > 0){
     cat('\taln_msa_to_pdb: aligning msa to pdb ')
   }
+
   aln = .align_sequences(c(pep, seq))
 
-  # step 2: map alignment to positions #
+  # step 2: map alignment to positions ----
   if(verbose > 0){
     cat('\taln_msa_to_pdb: mapping alignment to codon and pdb positions\n')
   }
-  pos_mat = .map_aln_to_positions(aln$aln_mat,
-                                 residue_df,
-                                 chain = chain)
 
-  # step 3: map patches to nucleotides #
+  pos_mat = .map_aln_to_positions(aln$aln_mat, residue_df, chain = chain)
+
+  # step 3: map patches to nucleotides ----
   if(verbose > 0){
     cat('\taln_msa_to_pdb: converting pdb patches to codon\n')
   }
+
   codon_patches = .map_patches_to_codons(pos_mat, residue_df)
+
+  # step 3.5 (adding aa info to codon_patches) ----
+
+  # codon ref aa can pull from aln_mat #
+  codon_patches$ref_aa = NA
+  codon_patches$ref_aa[1:ncol(pos_mat)] = aln$aln_mat[1,]
+
+  # pdb ref aa can just pull from residue_df #
+  codon_patches$pdb_aa = NA
+  idx = match(codon_patches$residue_id, residue_df$residue_id)
+  codon_patches$pdb_aa <- residue_df$aa[idx]
+
+  # just adjust a little so that if codon or residue_id is gap #
+  # corresponding ref_aa or pdb_aa is also gap #
+  codon_patches$ref_aa[codon_patches$codon == '-'] = '-'
+  codon_patches$pdb_aa[codon_patches$residue_id == '-'] = '-'
+
+  # reorder columns #
+  codon_patches = codon_patches[, c('codon', 'ref_aa', 'residue_id', 'pdb_aa', 'msa_subset_id', 'codon_patch')]
 
   # FILTER: drop unused PDB residues if requested
   if(drop_unused_residues) {
@@ -453,14 +418,6 @@ aln_msa_to_pdb = function(msa_info, pdb_info, chain = NA, drop_unused_residues =
     codon_patches = codon_patches[keep_rows, ]
   }
 
-  # step 3.5 (adding aa info to codon_patches) #
-
-  # match codon positions to get the column indices
-  matches = match(codon_patches$codon, pos_mat[1,])
-
-  # pull amino acids directly from alignment matrix
-  codon_patches$ref_aa = aln$aln_mat[1, matches]
-  codon_patches$pdb_aa = aln$aln_mat[2, matches]
 
   # step 4: grab subsets of MSA #
   msa_subsets = .extract_msa_subsets(msa_info$msa_mat, codon_patches)
@@ -473,3 +430,13 @@ aln_msa_to_pdb = function(msa_info, pdb_info, chain = NA, drop_unused_residues =
   )
 
 }
+
+# debug #
+if(F){
+  msa_info = msa_info_sets$msa1
+  pdb_info = pdb_info_sets$pdb1
+  chain = 'A'
+  drop_unused_residues = TRUE
+  verbose = 1
+}
+

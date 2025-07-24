@@ -26,3 +26,8 @@ evo3D_*.tar.gz
 *.swp
 *.bak
 *~
+
+# Testing and script usage folders
+retrieved_pdbs/*
+testing/*
+testing2/*

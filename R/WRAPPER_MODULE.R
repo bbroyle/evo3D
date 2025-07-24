@@ -9,21 +9,26 @@
   .evo3d_defaults = list(
 
     default_msa_controls = list(
-      ref_method = 1, # ** ref_method can be numeric, least_gap, or consensus -- see MSA_MODULE
-      force_seqtype = NULL, # ** can be protein or nucleic acid -- NULL means to autodetect
-      genetic_code = 1 # ** seqinr can use different genebank codes
+      ref_method = 'consensus', # ** ref_method can be numeric, least_gap, or consensus -- see MSA_MODULE
+      force_seq_type = NULL, # ** can be protein or nucleic acid -- NULL means to autodetect
+      detect_sequence_threshold = 0.8,
+      detect_sequence_len = 100,
+      genetic_code = 1, # ** seqinr can use different genebank codes
+      reading_frame = 0, # ** seqinr can use different reading frames
+      reading_sens = 'F'
     ),
 
     default_pdb_controls = list(
-      distance_method = 'all',  # ** all atom - can be side chain, backbone, ca
+      distance_method = 'ca',  # ** ca atom - can be side chain, backbone, ca, all
       drop_incomplete_residue = T, # ** for dssp style sasa -- drop incomplete residues
-      rsa.method = 'rose',         # ** sasa to rsa
-      patch.dist.cutoff = 15,      # ** defualt angstrom
-      patch.rsa.cutoff = 0.1,      # for surface def
-      patch.sasa.cutoff = NULL,    # if using sasa instead of rsa cuts
-      patch.only.exposed = TRUE,      # seed is exposed but patch can be also buried
-      max.patch = NULL,            # max aa in patch
-      interface.dist.cutoff = 5    # interface dist cut --
+      rsa_method = 'rose',         # ** sasa to rsa
+      patch_dist_cutoff = 15,      # ** defualt angstrom
+      patch_rsa_cutoff = 0.1,      # for surface def
+      patch_sasa_cutoff = NULL,    # if using sasa instead of rsa cuts
+      patch_exposed_only = TRUE,      # seed is exposed but patch can be also buried
+      max_patch = NULL,            # max aa in patch
+      interface_dist_cutoff = 5,    # interface dist cut --
+      force_file_type = NULL # can be pdb or cif
     ),
 
     default_aln_controls = list(
@@ -83,7 +88,7 @@
   # 6/26/25 -- still need to stop #
 
   if (length(unknown_keys) > 0) {
-    message(sprintf("[%s] Unrecognized keys: %s", module_name, paste(unknown_keys, collapse = ", ")))
+    stop(sprintf("[%s] Unrecognized keys: %s", module_name, paste(unknown_keys, collapse = ", ")))
     user_controls = user_controls[!names(user_controls) %in% unknown_keys]
   }
 
@@ -453,8 +458,8 @@ show_evo3d_defaults = function(module_name = NULL){
 #'
 #' @param restart_run A previous evo3d run object used to restart the pipeline (e.g., after alignment failure or to reuse mapped PDB metadata).
 #' @param user_aln A user-provided MSA aligned to the reference sequence. Can be a single alignment or a list (for multi-run pipelines). Used in conjunction with \code{restart_run}.
-#' @param msa_controls List of control parameters for MSA preprocessing (e.g. \code{ref_method}, \code{force_seqtype}).
-#' @param pdb_controls List of control parameters for patch definition (e.g. \code{patch.dist.cutoff}, \code{rsa.method}).
+#' @param msa_controls List of control parameters for MSA preprocessing (e.g. \code{ref_method}, \code{force_seq_type}).
+#' @param pdb_controls List of control parameters for patch definition (e.g. \code{patch_dist_cutoff}, \code{rsa_method}).
 #' @param aln_controls List of control parameters for MSA–structure alignment (if applicable).
 #' @param stat_controls List of control parameters for patch-level statistic calculations (e.g. \code{calc_pi}, \code{calc_tajima}).
 #' @param output_controls List of control parameters for output formatting (e.g. \code{output_format}, \code{output_dir}).
@@ -540,39 +545,6 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   # cache pdbs #
   for(pdb_name in names(run_info$pdb)) {
     pdb_cache[[pdb_name]] = .standardize_pdb_input(pdb = run_info$pdb[[pdb_name]])
-  }
-
-  # add auto detection if needed #
-  if(F){
-  for (i in auto_ros) {
-    # get pdb and msa names
-    pdb_name = run_grid$pdb[i]
-    msa_name = run_grid$msa[i]
-
-    # Run auto detect #
-    chain_mappings = .auto_detect_chain(
-      pep = msa_info_sets[[msa_name]]$pep,
-      pdb = pdb_cache[[pdb_name]],
-      in_module = TRUE,
-      k = kmer_size
-    )
-
-    # check for passing auto_chain_threshold #
-    if(!any(chain_mappings >= auto_chain_threshold)) {
-      if (verbose > 0) {
-        message(sprintf("In auto chain mapping: No chains in '%s' passed the k-mer threshold for '%s' (%.2f).\n",
-                    pdb_name, msa_name, auto_chain_threshold))
-      }
-      run_grid$chain[i] = NA
-      next
-    }
-
-    # get best chain based on kmer similarity #
-    run_grid$chain[i] = names(chain_mappings)[1]
-
-    # add similarity scores #
-    run_grid$kmer_match[i] = round(chain_mappings[1], 2)
-  }
   }
 
   # auto chain for all #
@@ -690,14 +662,6 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
     # remove NA and get unique chains #
     chain_set = chain_set[!is.na(chain_set)]
     chain_set = unique(chain_set)
-
-    # if there are no chains (this pdb doesnt map to any MSA) -- already cleared out #
-    #if(length(chain_set) == 0) {
-    #  if(verbose > 0) {
-    #    message(sprintf("No chains found for PDB '%s'. Skipping...\n", pdb_name))
-    #  }
-    #  next
-    #}
 
     # gather interface and occlusion chains #
     call_args = list(
@@ -873,10 +837,15 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
                                    )
     }
 
+
+    # remove patch_msa column #
+    extended_result$aln_df$patch_msa = NULL
+
     # Replace first, remove others
     working_aln_sets[[rows_for_pdb[1]]] = extended_result
     working_aln_sets[rows_for_pdb[-1]] = NULL
     working_run_grid = working_run_grid[-rows_for_pdb[-1], ]
+
   }
 
   # Final result is working_aln_sets[[1]] (should be only one left)
@@ -1041,8 +1010,8 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
     }
 
     if (output_controls$write_call_info) {
-      call_path = file.path(paste0(tools::file_path_sans_ext(call_path), tag, '.json'))
 
+      call_path = file.path(paste0(tools::file_path_sans_ext(call_path), tag, '.json'))
 
       jsonlite::write_json(
         call_info,
@@ -1093,3 +1062,5 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   )
 
 }
+
+
