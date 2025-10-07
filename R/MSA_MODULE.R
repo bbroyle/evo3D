@@ -112,7 +112,7 @@
 #' @return a string: either \code{"nucleotide"} or \code{"protein"}
 #' @keywords internal
 
-.detect_sequence_type  function(seq, detect_sequence_threshold = 0.8, detect_sequence_len = 100) {
+.detect_sequence_type = function(seq, detect_sequence_threshold = 0.8, detect_sequence_len = 100) {
   # check first 100 characters of sequence for nucleotides #
   # if >=90% are ATCG, return nucleotide # ~ similar to muscle approach ~ #
 

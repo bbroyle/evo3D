@@ -169,7 +169,7 @@ write_patch_pymol = function(patches){
   #cat(cmd_list, sep = '\n')
 
   # get color per patch #
-  colors  grDevices::hcl.colors(nrow(patches), palette = 'Dynamic')
+  colors = grDevices::hcl.colors(nrow(patches), palette = 'Dynamic')
   colors = gsub('#', '', colors)
   colors = colors[sample(1:length(colors))]
   color_cmd = paste0('color 0x', colors, ', patch_', 1:nrow(patches))
@@ -459,12 +459,12 @@ calculate_polymorphic_residue = function(msa_info_sets, residue_df, valid_aa_onl
 
 
     # build lookups
-    poly_lookup    setNames(res$polymorphic, res$codon_id)
-    entropy_lookup  setNames(res$site_entropy, res$codon_id)
+    poly_lookup  =  setNames(res$polymorphic, res$codon_id)
+    entropy_lookup =  setNames(res$site_entropy, res$codon_id)
 
     # assign by matching codon_id
-    residue_df$polymorphic  poly_lookup[residue_df$codon_id]
-    residue_df$site_entropy  entropy_lookup[residue_df$codon_id]
+    residue_df$polymorphic = poly_lookup[residue_df$codon_id]
+    residue_df$site_entropy =  entropy_lookup[residue_df$codon_id]
 
   }
 }

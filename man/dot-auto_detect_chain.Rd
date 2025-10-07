@@ -32,8 +32,8 @@ coverage is defined as the fraction of pdb k-mers also present in the peptide se
 }
 \examples{
 \dontrun{
-pep <- "MKTFFVAGVILLLVATATGVHS"
-pdb <- standardize_pdb_input("my_structure.pdb")
+pep = "MKTFFVAGVILLLVATATGVHS"
+pdb = standardize_pdb_input("my_structure.pdb")
 auto_detect_chain(pep, pdb)
 }
 
