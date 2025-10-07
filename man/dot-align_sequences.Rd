@@ -34,3 +34,4 @@ sequences prior to downstream patch analyses.
 \seealso{
 \code{.calculate_coverage}
 }
+\keyword{internal}

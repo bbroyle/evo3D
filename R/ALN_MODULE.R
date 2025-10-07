@@ -190,7 +190,7 @@
 #'     \code{.calculate_coverage}). Includes mismatch ranges if applicable.}
 #' }
 #' @seealso \code{.calculate_coverage}
-#' @keywords internal\
+#' @keywords internal
 
 .align_sequences = function(sequences, user_supplied_alignment = NA){
 

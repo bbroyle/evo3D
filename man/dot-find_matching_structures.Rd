@@ -50,3 +50,4 @@ external database queries can be rate limited, so avoid running in tight paralle
 \code{\link{download_structures}}, \code{bio3d::blast.pdb}, \code{bio3d::get.pdb}
 }
 \keyword{experimental}
+\keyword{internal}

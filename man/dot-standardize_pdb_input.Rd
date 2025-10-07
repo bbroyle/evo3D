@@ -12,15 +12,18 @@
 \item{force_file_type}{optional character; override auto-detection.
 one of \code{"cif"} or \code{"pdb"}. default NULL = auto-detect by file extension.}
 }
-\value{
-a \code{bio3d} pdb object with standardized atom table, including
-  an added \code{residue_id} column of the form "resno_chain_insert".
-}
 \description{
 reads a pdb or cif file (or an existing bio3d object) and returns a cleaned pdb
 object for downstream evo3d analysis. fixes missing insert codes, replaces
 illegal '+' characters, and appends a unique residue identifier column.
 }
 \details{
+This function performs several preprocessing steps:
 
+- If the PDB contains '+' in residue numbers, chain IDs, or insert codes,
+  these are replaced with a safe alternate character (one of \code{!,$,\%,\&,~,@}).
+  If no safe replacement is available, the function stops with an error.
+- Insert codes with NA are replaced by \code{""} (empty string).
+- Residue IDs are constructed as \code{"resno_chain_insert"}
+  and stored in \code{atom$residue_id}.
 }

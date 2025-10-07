@@ -51,7 +51,7 @@
 #' @seealso \code{\link{download_structures}}, \code{bio3d::blast.pdb}, \code{bio3d::get.pdb}
 #'
 #' @keywords experimental
-#' @internal
+#' @keywords internal
 
 .find_matching_structures = function(pep, identity_cutoff = 80, max_hits = 5, generate_plot = T,
                                     download_pdbs = T, output_dir = 'retrieved_pdbs'){
@@ -314,16 +314,15 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 #' @param force_file_type optional character; override auto-detection.
 #'   one of \code{"cif"} or \code{"pdb"}. default NULL = auto-detect by file extension.
 #'
-#' @return a \code{bio3d} pdb object with standardized atom table, including
-#'   an added \code{residue_id} column of the form "resno_chain_insert".
-#'
 #' @details
-#' - if the pdb contains '+' in residue numbers, chain ids, or insert codes,
-#'   these are replaced with a safe alternate character (one of \code{!,$,%,&,~,@}).
-#'   if no safe replacement is available, the function stops with an error.
-#' - insert codes with NA are replaced by "" (empty string).
-#' - residue ids are constructed as \code{"resno_chain_insert"} and stored in \code{atom$residue_id}.
+#' This function performs several preprocessing steps:
 #'
+#' - If the PDB contains '+' in residue numbers, chain IDs, or insert codes,
+#'   these are replaced with a safe alternate character (one of \code{!,$,\%,\&,~,@}).
+#'   If no safe replacement is available, the function stops with an error.
+#' - Insert codes with NA are replaced by \code{""} (empty string).
+#' - Residue IDs are constructed as \code{"resno_chain_insert"}
+#'   and stored in \code{atom$residue_id}.
 #' @export
 
 .standardize_pdb_input = function(pdb, force_file_type = NULL){
@@ -367,7 +366,7 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 
   if(any(in_resno, in_chain, in_insert)){
     # replacements for "+"
-    replacements = c("!","$","%","&","~","@")
+    replacements = c("!","$","%","&","~")
 
     # used characters in set #
     all_chars = paste(pdb$atom$resno, pdb$atom$chain, pdb$atom$insert, collapse = '')
