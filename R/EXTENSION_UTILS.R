@@ -1,1793 +1,855 @@
 # ------------------------------------------ #
 # EXTENSION_UTILS.R
 # utilities for incorporating multiple msa and pdbs
-# also special logic for homomultimers so each codon recieves one patch
+# also special logic for multimers so each codon recieves one patch
 # Brad Broyles
 # ------------------------------------------ #
 
-# extend_pdb_homomultimer() ----
 
-#' Extend Patch Definitions Across Homomultimer Chains
-#'
-#' For homomultimeric proteins, identical codons may occur on multiple chains. This function merges
-#' residue patches that map to the same codon number across chains, ensuring each codon position is
-#' associated with a single patch. It updates MSA subsets accordingly and consolidates metadata.
-#'
-#' @param aln_info_sets A named list of \code{aln_df} outputs (e.g., from \code{aln_msa_to_pdb()}), one per chain or structure.
-#' @param msa_info Output of \code{WRAPPER_msa_to_ref()}, containing the full codon-aligned nucleotide MSA matrix.
-#'
-#' @return A list with:
-#' \describe{
-#'   \item{\code{msa_subsets}}{A named list of updated MSA patch subsets (post-merging).}
-#'   \item{\code{aln_df}}{A combined residue-level metadata table after patch unification.}
-#' }
-#' @export
-
-# this time -- i will just expand patches as I go -- in the end we will update msa_subsets #
-extend_pdb_homomultimer= function(aln_info_sets, msa_info, merge_unmatched_across_chain = TRUE){
-
-  # this function takes all homomultimer sets at once (unlike extend_pdb and extend_msa which are called recursively)
-  # track orphans (residues that touch one or more of these chains but are not from these chains)
-  # track interfaces (can merge on common name)
-  # track gap-map (depending on assume_resi we may or may not collapse these to single positions)
-
-  # step 0 -- set up patch joining methods (just union for now) # ----
-  union_codon_patches <- function(patch1, patch2) {
-    # split by '+', get unique numbers, sort, and rejoin
-    if(is.na(patch1)) patch1 = ''
-    if(is.na(patch2)) patch2 = ''
-    nums1 = as.numeric(strsplit(patch1, "\\+")[[1]])
-    nums2 = as.numeric(strsplit(patch2, "\\+")[[1]])
-    union_nums = sort(unique(c(nums1, nums2)))
-    return(paste(union_nums, collapse = "+"))
-  }
-
-  # step 1 -- merge patches on common residue_id (includes gap-map, orphans, interfaces, and codon-mapped) ----
-
-  # rbind all these aln_info_sets together #
-  set_names = names(aln_info_sets)
-  dfs = lapply(set_names, function(x) aln_info_sets[[x]]$aln_df)
-  combined_df = do.call(rbind, dfs)
-
-  # finding residue_ids #
-  residues = unique(combined_df$residue_id)
-  residues = residues[!is.na(residues) & residues != '-']
-
-  if(length(residues) > 0){
-    for(resi in residues){
-
-      rows = which(combined_df$residue_id == resi)
-      if(length(rows) == 1){
-        next # nothing to  collapse
-      }
-
-      # 1. combine patches #
-      combined_patch1 = union_codon_patches(combined_df$codon_patch[rows[1]], NA)
-      combined_patch2 = combined_patch1
-      for(i in 2:length(rows)){
-        combined_patch2 = union_codon_patches(combined_patch2, combined_df$codon_patch[rows[i]])
-      }
-
-      # always first row encountered is the one to save #
-      update_row = rows[1]
-      delete_rows = rows[-1]
-
-      # 1.5 what is updated codon and msa_subset_id #
-      codons = combined_df$codon[rows]
-      prev_ids = combined_df$msa_subset_id[rows]
-
-      # NOTE -- there is a possibility that 197_A_ maps to codon 50 and so does 198_B_ #
-      # I have not seen this but it could happen -- we will check after wrapper #
-      if(!all(codons %in% c(NA, '-'))){
-        # if we can tie to codon -- do so #
-        update_pos = which(codons != '-' & !is.na(codons))[1]
-        new_codon = codons[update_pos]
-        new_msa_id = paste0('codon_', new_codon)
-      } else if (!all(codons %in% NA)){
-        # otherwise we can tie to a gap and save residue_id #
-        update_pos = which(!is.na(codons))[1]
-        new_codon = codons[update_pos]
-        new_msa_id = paste0('residue_', resi)
-      } else {
-        # cant tie to codon or gap -- interface or orphan residue #
-        # use first id (they will all be the same)
-        new_codon = NA
-        new_msa_id = prev_ids[1] # just use first one
-      }
-
-
-      # 2. Update combined DF with all this new info #
-      combined_df$codon[update_row] = new_codon
-      combined_df$msa_subset_id[update_row] = new_msa_id
-      combined_df$codon_patch[update_row] = combined_patch2
-
-      # 3. delete all other rows #
-      combined_df = combined_df[-delete_rows, , drop = FALSE]
-    }
-  }
-
-  # step 2 -- handling codon mapped residues ----
-
-  # potential codons to map #
-  all_codons = unique(combined_df$codon)
-  all_codons = all_codons[!is.na(all_codons) & all_codons != '-']
-
-
-  if(length(all_codons) > 0){
-    for(codon in all_codons){
-
-      rows = which(combined_df$codon == codon)
-      if(length(rows) == 1){
-        next # nothing to pull / add / or collapse
-      }
-
-      # build pdb_aa and residue_id strings #
-      aa = combined_df$pdb_aa[rows]
-      resi = combined_df$residue_id[rows]
-
-      aa = paste(aa, collapse = '+')
-      resi = paste(resi, collapse = '+')
-
-      new_msa_id = paste0('codon_', codon)
-      prev_ids = combined_df$msa_subset_id[rows]
-
-      # 1. combine patches #
-      combined_patch1 = union_codon_patches(combined_df$codon_patch[rows[1]], NA)
-      combined_patch2 = combined_patch1
-      for(i in 2:length(rows)){
-        combined_patch2 = union_codon_patches(combined_patch2, combined_df$codon_patch[rows[i]])
-      }
-
-      # 1.5 which row to preserve and pull msa_subset_name #
-      update_row = rows[1]
-      delete_rows = rows[-1]
-
-      combined_df[update_row, c('pdb_aa', 'residue_id')] = c(aa, resi)
-      combined_df$codon_patch[update_row] = combined_patch2
-      combined_df$msa_subset_id[update_row] = new_msa_id
-
-      # 4. delete all other rows #
-      combined_df = combined_df[-delete_rows, , drop = FALSE]
-    }
-  }
-
-  # step 3 -- merging gap-mapped chains # ----
-
-  # only chains that map to msa of interest are gap-map #
-
-  if(merge_unmatched_across_chain){
-
-
-    gap_map = unique(combined_df$residue_id[combined_df$codon == '-'])
-    gap_map = gap_map[!is.na(gap_map)]
-
-
-    if(length(gap_map) > 0){
-      # add one last ' ' to preserve inserts
-      gap_map = paste0(gap_map, ' ')
-
-      # split residue_id into res, chain, insert #
-      residue_parts = do.call(rbind, strsplit(gap_map, '_'))
-      residue_parts[,3] = gsub(' $', '', residue_parts[,3])
-
-      # see which chains are mapped to gap #
-      gap_chains = unique(residue_parts[,2])
-
-      keys = residue_parts[,c(1,3)]
-      keys = unique(keys)
-
-      for(k in 1:nrow(keys)){
-        key_ops = paste(keys[k,1], gap_chains, keys[k,2], sep = '_')
-
-        # row for these keys
-        rows = which(combined_df$residue_id %in% key_ops)
-        if(length(rows) == 1){
-          next # nothing to pull / add / or collapse
-        }
-
-        # build pdb_aa and residue_id strings #
-        aa = combined_df$pdb_aa[rows]
-        resi = combined_df$residue_id[rows]
-
-        aa = paste(aa, collapse = '+')
-        resi = paste(resi, collapse = '+')
-
-        new_msa_id = paste('residue', keys[k,1], paste0(gap_chains, collapse = ''), keys[k,2], sep = '_')
-        prev_ids = combined_df$msa_subset_id[rows]
-
-        # 1. combine patches #
-        combined_patch1 = union_codon_patches(combined_df$codon_patch[rows[1]], NA)
-        combined_patch2 = combined_patch1
-        for(i in 2:length(rows)){
-          combined_patch2 = union_codon_patches(combined_patch2, combined_df$codon_patch[rows[i]])
-        }
-
-        # 1.5 which row to preserve and pull msa_subset_name #
-        update_row = rows[1]
-        delete_rows = rows[-1]
-
-        combined_df[update_row, c('pdb_aa', 'residue_id')] = c(aa, resi)
-
-        combined_df$codon_patch[update_row] = combined_patch2
-        combined_df$msa_subset_id[update_row] = new_msa_id
-
-        # 4. delete all other rows #
-        combined_df = combined_df[-delete_rows, , drop = FALSE]
-
-      }
-    }
-
-  }
-
-  # step 4 -- update msa_subset_id with codon patches # ----
-  # one way is pull all of them #
-  # another is pull those newly created #
-  # easiest to just grab new -- but costly #
-  # and i think its better to grab just the ones I want #
-  # -- other set is grabbing allways at the very end of the pipeline #
-
-  # reset patch '' to NA
-  combined_df$codon_patch[combined_df$codon_patch == ''] = NA
-
-  # for now -- just grab all new subsets #
-  aln_info_sets[[1]]$msa_subsets = NULL
-  aln_info_sets[[1]]$msa_subsets = .extract_msa_subsets(msa_info$msa_mat, combined_df)
-
-  # lets rearrange aln_info_set1$msa_subsets to match combined_df$msa_subset_id
-  msa_subset_ids = combined_df$msa_subset_id
-  msa_subset_ids = msa_subset_ids[!is.na(msa_subset_ids) & msa_subset_ids != '-']
-  msa_subset_ids = unique(msa_subset_ids)
-  aln_info_sets[[1]]$msa_subsets = aln_info_sets[[1]]$msa_subsets[msa_subset_ids]
-
-  # return data ----
-  return(list(
-    msa_subsets = aln_info_sets[[1]]$msa_subsets,
-    aln_df = combined_df
-  ))
-
-}
-
-# debug #
-if(F){
-  aln_info_sets = working_aln_sets[1:4]
-  msa_info = msa_info_sets[[1]]
-  merge_unmatched_across_chain = TRUE
-}
-
-# extend_pdb() ----
-#' Merge Codon Patch Definitions Across Structures
-#'
-#' This function combines patch metadata from two aligned PDB structures (or chain combinations)
-#' that share a reference MSA. For codons present in both inputs, it performs a union of the
-#' patch windows and updates the corresponding MSA subsets. It supports recursive application
-#' to successively integrate additional models.
-#'
-#' @param aln_info_set1 A named list from \code{aln_msa_to_pdb()} or previous \code{extend_pdb()} output.
-#' @param aln_info_set2 A new alignment info set (output of \code{aln_msa_to_pdb()} for a new structure or chain).
-#' @param msa_info Output of \code{WRAPPER_msa_to_ref()}, containing the full codon-aligned MSA matrix.
-#'
-#' @return A list with:
-#' \describe{
-#'   \item{\code{msa_subsets}}{A named list of updated MSA patch subsets, merged across structures.}
-#'   \item{\code{aln_df}}{A unified residue-level metadata table including all merged structures.}
-#' }
-#'
-#' @details
-#' This function allows progressive patch merging across structural models by tagging each new set
-#' of PDB columns (e.g., \code{pdb2_residue_id}, \code{pdb3_residue_id}, etc.). Interface and orphan
-#' rows are preserved. Patch subsets from \code{aln_info_set2} are added to the master list unless
-#' already present.
-#'
-#' @export
-extend_pdb = function(aln_info_set1, aln_info_set2, msa_info){
-
-  # Take two aln_info sets that share an underlying msa #
-  # -- build extended codon patches on shared codon residues #
-  # -- some residues are not mapped to codon #
-  # 1. gap mapped residues (match '-' in codon) --
-  # -- we could be clever and map pdb sequences together but for now just leave them unmapped unextneded
-  # 2. orphan residues (grab some codons from this MSA but map to a different chain) - handled in extend_msa()
-  # 3. interfaces (similar to orphans -- they may be handled later in extend)
-
-  # this function can be called recursively
-  # but aln_info_set2 is always new (from aln_msa_to_pdb)
-
-  # step 0 -- set up patch joining methods (just union for now) # ----
-  union_codon_patches <- function(patch1, patch2) {
-    # split by '+', get unique numbers, sort, and rejoin
-    nums1 = as.numeric(strsplit(patch1, "\\+")[[1]])
-    nums2 = as.numeric(strsplit(patch2, "\\+")[[1]])
-    union_nums = sort(unique(c(nums1, nums2)))
-    paste(union_nums, collapse = "+")
-  }
-
-  # step 1 -- track pdb number # ----
-  extended_aln_df = aln_info_set1$aln_df
-  additional_aln_df = aln_info_set2$aln_df
-
-  cols = colnames(extended_aln_df)
-  if('residue_id' %in% cols){
-    # this is output from aln_msa_to_pdb() #
-    next_pdb = 2
-
-    # update column names #
-    colnames(extended_aln_df)[which(cols == 'residue_id')] = 'pdb1_residue_id'
-    colnames(extended_aln_df)[which(cols == 'pdb_aa')] = 'pdb1_aa'
-
-    # add pdb1 tag to residue (gap-map or orphan) and interface codon subsets #
-    msa_names = names(aln_info_set1$msa_subsets)
-    pos = grep('^residue|^interface', msa_names)
-    if(length(pos) > 0) {
-      names(aln_info_set1$msa_subsets)[pos] = paste0(msa_names[pos], '_pdb1')
-    }
-
-    # same thing for msa_subset_ids #
-    pos = grep('^interface_|^residue_', extended_aln_df$msa_subset_id)
-    if(length(pos) > 0) {
-      extended_aln_df$msa_subset_id[pos] = paste0(extended_aln_df$msa_subset_id[pos], '_pdb1')
-    }
-
-  } else {
-    # this is output from previous extend_pdb() -- what count are we on #
-    pdb_cols = cols[grep("^pdb[0-9]+_res", colnames(extended_aln_df))]
-    next_pdb = length(pdb_cols) + 1
-  }
-
-  # update additional_aln_df
-  cols = colnames(additional_aln_df)
-  colnames(additional_aln_df)[which(cols == 'residue_id')] = paste0('pdb', next_pdb, '_residue_id')
-  colnames(additional_aln_df)[which(cols == 'pdb_aa')] = paste0('pdb', next_pdb, '_aa')
-
-  # add pdbx tag to msa_subsets
-  msa_names = names(aln_info_set2$msa_subsets)
-  pos = grep('^residue|^interface', msa_names)
-  if(length(pos) > 0) {
-    names(aln_info_set2$msa_subsets)[pos] = paste0(msa_names[pos], '_pdb', next_pdb)
-  }
-
-  # same thing for msa_subset_ids #
-  pos = grep('^interface_|^residue_', additional_aln_df$msa_subset_id)
-  if(length(pos) > 0) {
-    additional_aln_df$msa_subset_id[pos] = paste0(additional_aln_df$msa_subset_id[pos], '_pdb', next_pdb)
-  }
-
-  # step 2 -- hold on to extra data (orphans and interfaces) to add after merge ----
-
-  # try to clean this part up #
-  # collect unmerged rows
-  extra_list <- list(
-    extended_aln_df[is.na(extended_aln_df$codon), ],
-    additional_aln_df[is.na(additional_aln_df$codon), ]
+# .split_pdb_column() ----
+.split_pdb_column = function(df) {
+  # store the intended codon order
+  codon_order <- unique(df$codon_id)
+
+  # keep msa and codon along with codon_id
+  base = aggregate(
+    list(ref_aa = df$ref_aa,
+         msa     = df$msa,
+         codon   = df$codon),
+    by = list(codon_id = df$codon_id),
+    FUN = function(x) x[1]   # take the first entry (all identical within codon_id)
   )
 
-  # filter non-empty
-  all_cols <- unique(unlist(lapply(extra_list, names)))
-  extra_list <- extra_list[sapply(extra_list, nrow) > 0]
+  pdb_ids = unique(df$pdb)
 
-  # bind if any exist
-  extra_combined <- if (length(extra_list)) {
-    do.call(rbind, lapply(extra_list, function(df) {
-      missing <- setdiff(all_cols, names(df))
-      df[missing] <- NA
-      df
-    }))
-  } else {
-    NULL
+  for (p in pdb_ids) {
+    sub = df[df$pdb == p, ]
+
+    aa = aggregate(list(val = sub$pdb_aa),
+                   by = list(codon_id = sub$codon_id),
+                   FUN = function(x) paste(x, collapse = "+"))
+    names(aa)[2] = paste0(p, "_pdb_aa")
+
+    res = aggregate(list(val = sub$residue_id),
+                    by = list(codon_id = sub$codon_id),
+                    FUN = function(x) paste(x, collapse = "+"))
+    names(res)[2] = paste0(p, "_residue_id")
+
+    base = merge(base, aa,  by = "codon_id", all.x = TRUE, sort = FALSE)
+    base = merge(base, res, by = "codon_id", all.x = TRUE, sort = FALSE)
   }
 
-  # old version still here #
-  # store extra info that will not be merged #
-  #extra1 = extended_aln_df[is.na(extended_aln_df$codon),]
-  #extra2 = additional_aln_df[is.na(additional_aln_df$codon),]
-  # only process extras if we actually have some
-  #if(nrow(extra1) > 0 || nrow(extra2) > 0) {
-  #  # get all unique columns from both dataframes
-  #  all_cols = unique(c(names(extra1), names(extra2)))
-  #
-  #  # add missing columns to extra1 (will be NA)
-  #  if(nrow(extra1) > 0) {
-  #    missing_in_extra1 = setdiff(all_cols, names(extra1))
-  #    extra1[missing_in_extra1] = NA
-  #  }
-  #
-  #  # add missing columns to extra2 (will be NA)
-  #  if(nrow(extra2) > 0) {
-  #    missing_in_extra2 = setdiff(all_cols, names(extra2))
-  #    extra2[missing_in_extra2] = NA
-  #  }
+  # total occurrences per codon (across all pdbs)
+  #occ = aggregate(list(count = df$pdb_aa),
+  #                by = list(codon_id = df$codon_id),
+  #                FUN = length)
 
-  #  # now rbind them
-  #  extra_combined = rbind(extra1, extra2)
-  #} else {
-  #  extra_combined = NULL
-  #}
+  # number of resolved (non-gap) residues per codon
+  res = aggregate(list(resolved = df$pdb_aa),
+                  by = list(codon_id = df$codon_id),
+                  FUN = function(x) sum(x != "-"))
 
-  # remove these extras just from extended_aln_df #
-  extended_aln_df = extended_aln_df[!is.na(extended_aln_df$codon),]
-  additional_aln_df = additional_aln_df[!is.na(additional_aln_df$codon),]
+  #base = merge(base, occ, by = "codon_id", all.x = TRUE, sort = FALSE)
+  base = merge(base, res, by = "codon_id", all.x = TRUE, sort = FALSE)
 
-  # step 3 -- build union pdb patches # ----
+  # finally: restore codon order
+  base = base[match(codon_order, base$codon_id), ]
 
-  # see if aln_set 2 will add any information -- if not skip it #
-  codons2 = additional_aln_df$codon[!is.na(additional_aln_df$codon_patch)]
-  shared_codons = intersect(extended_aln_df$codon, codons2)
-
-  # drop '-' gap mapped codons if they exist in shared_codons
-  shared_codons = shared_codons[shared_codons != '-']
-
-  # so we need to extend patches for these shared codons -- take union of two codon_patches #
-  updated_codons = c()
-
-  for(i in 1:length(shared_codons)){
-    # get the patches for this codon in both dataframes
-    patch1 = extended_aln_df$codon_patch[which(extended_aln_df$codon == shared_codons[i])]
-    patch2 = additional_aln_df$codon_patch[which(additional_aln_df$codon == shared_codons[i])]
-
-    # handle different cases
-    if(is.na(patch1)) {
-      # patch1 is NA, patch2 has data (guaranteed by codons2 filter) - use patch2
-      new_patch = patch2
-      updated_codons = c(updated_codons, shared_codons[i])
-    } else {
-      # both have data - take union
-      new_patch = union_codon_patches(patch1, patch2)
-      if(new_patch != patch1) {
-        updated_codons = c(updated_codons, shared_codons[i])
-      } else {
-        next  # no change needed
-      }
-    }
-
-    # update the extended_aln_df with the new patch
-    extended_aln_df$codon_patch[which(extended_aln_df$codon == shared_codons[i])] = new_patch
-  }
-
-  # step 3.5 squeeze in gap mapped & merge aln_info_set2 into this data ----
-
-  # pre-add these additional columns (pdbX_aa, pdbX_residue_id) #
-  add_col = c(paste0('pdb', next_pdb, '_residue_id'), paste0('pdb', next_pdb, '_aa'))
-  extended_aln_df[, add_col] = NA
-
-  # if there are gap_map residues then we need codon to squeeze in right before #
-  if(any(additional_aln_df$codon == '-')) {
-
-    # build next codons for gaps #
-    codons = additional_aln_df$codon
-    n = length(codons)
-    codon_after  = rep(NA, n)
-
-    # what is the next codon we hit #
-    next_seen = NA
-    for (i in n:1) {
-      codon_after[i] = next_seen
-      if (codons[i] != '-') next_seen = codons[i]
-    }
-
-    additional_aln_df$codon_after  = codon_after
-
-    # okay now add these gap_map residues #
-    gap_map = additional_aln_df[additional_aln_df$codon == '-',]
-
-    extra_cols = setdiff(colnames(extended_aln_df), colnames(gap_map))
-    gap_map[, extra_cols] = NA  # ensure all columns match
-
-    rbind_cols = setdiff(names(gap_map), "codon_after")
-
-
-    for(i in 1:nrow(gap_map)){
-      # find the codon after and add right above it #
-      # if codon after is NA -- it occurs at the end of alignment #
-      # --- in this case just add to end of dataframe #
-      codon_after = gap_map$codon_after[i]
-
-      if(is.na(codon_after)){
-        # add to end of dataframe #
-        extended_aln_df = rbind(extended_aln_df, gap_map[i, rbind_cols])
-      } else {
-
-        # need split and rejoin extended_aln_df #
-        idx = which(extended_aln_df$codon == codon_after)
-        if(idx == 1){
-          # easy case just tack on to start of df #
-          extended_aln_df = rbind(gap_map[i, rbind_cols],
-                                  extended_aln_df)
-        } else {
-          # split into two pieces -- before id and id+
-          p1 = extended_aln_df[1:(idx-1), ]
-          p2 = extended_aln_df[idx:nrow(extended_aln_df), ]
-          # rebind with gap_map row in between #
-          extended_aln_df = rbind(p1,
-                                  gap_map[i, rbind_cols],
-                                  p2)
-
-        }
-      }
-    }
-
-    # before leaving move over these msa subsets from gap_map #
-    msa_names = gap_map$msa_subset_id
-    msa_names = msa_names[!is.na(msa_names)]
-    if(length(msa_names) > 0){
-      aln_info_set1$msa_subsets[msa_names] = aln_info_set2$msa_subsets[msa_names]
-    }
-
-  }
-
-  # add additional_aln_df to extended_aln_df #
-  additional_aln_df = additional_aln_df[additional_aln_df$codon != '-',]
-  for(i in seq_len(nrow(additional_aln_df))){
-    idx = which(extended_aln_df$codon == additional_aln_df$codon[i])
-    extended_aln_df[idx, add_col[1]] = additional_aln_df[i, add_col[1]]
-    extended_aln_df[idx, add_col[2]] = additional_aln_df[i, add_col[2]]
-  }
-
-  # are there any rows that need msa_subset_id added (present only in additional_aln_df) #
-  add_ro = which(is.na(extended_aln_df$msa_subset_id) & !is.na(extended_aln_df$codon_patch))
-  if(length(add_ro) > 0){
-    these = extended_aln_df$codon[add_ro]
-    these = these[!is.na(these)]
-    these = these[these != '-']
-    extended_aln_df$msa_subset_id[add_ro] = additional_aln_df$msa_subset_id[match(these, additional_aln_df$codon)]
-  }
-
-  # step 4 -- rebuild msa_subsets ----
-  if(length(updated_codons) > 0){
-    ro = which(extended_aln_df$codon %in% updated_codons)
-    msa_subsets = .extract_msa_subsets(msa_info$msa_mat, extended_aln_df[ro,])
-
-    # replace or write to aln_info_set1$msa_subsets #
-    aln_info_set1$msa_subsets[names(msa_subsets)] = msa_subsets
-  }
-
-  # add any additional sets (orphans and interface) #
-  set1 = names(aln_info_set1$msa_subsets)
-  set2 = names(aln_info_set2$msa_subsets)
-  bonus_sets = set2[!set2 %in% set1]
-
-  aln_info_set1$msa_subsets[bonus_sets] = aln_info_set2$msa_subsets[bonus_sets]
-
-  # step 5 -- add extra back to extended_aln_df ----
-  if(!is.null(extra_combined)) {
-    extended_aln_df = rbind(extended_aln_df, extra_combined)
-  }
-
-  # lets rearrange columns before return #
-  col_order = c('codon', 'ref_aa',
-                grep('pdb[0-9]+_residue', colnames(extended_aln_df), value = TRUE),
-                grep('pdb[0-9]+_aa', colnames(extended_aln_df), value = TRUE),
-                'msa_subset_id',
-                'codon_patch'
-  )
-
-  col_order = c(col_order, setdiff(colnames(extended_aln_df), col_order))
-  extended_aln_df = extended_aln_df[, col_order]
-
-  # lets rearrange aln_info_set1$msa_subsets to match extended_aln_df$msa_subset_id
-  msa_subset_ids = extended_aln_df$msa_subset_id
-  msa_subset_ids = msa_subset_ids[!is.na(msa_subset_ids) & msa_subset_ids != '-']
-  msa_subset_ids = unique(msa_subset_ids)
-  aln_info_set1$msa_subsets = aln_info_set1$msa_subsets[msa_subset_ids]
-
-  # return
-  return(list(msa_subsets = aln_info_set1$msa_subsets,
-              aln_df = extended_aln_df))
+  base
 }
 
-# debug #
-if(F){
-aln_info_set1 = extended_result
-aln_info_set2 = working_aln_sets[[2]]
-msa_info = msa_info_sets[[1]]
+
+# .union_distance() ----
+.union_distance = function(patches){
+
+  # drop NA patches
+  patches = patches[!is.na(patches)]
+
+  if(length(patches) == 0) return(NA)
+
+  sets = strsplit(patches, '\\+')
+
+  #1_msa1+2_msa1+3_msa1+4_msa1 -- turn to counts 1_msa1(1), 2_msa1(1), 3_msa1(2) -- union will keep the highest count for each codon #
+  patch_counts = lapply(sets, table)
+  all_codons = unique(unlist(sets))
+
+  mat = sapply(patch_counts, function(tab) {
+    out = integer(length(all_codons))
+    names(out) = all_codons
+    out[names(tab)] = tab
+    out
+  })
+
+  counts = apply(mat, 1, max)
+
+  # unpack back to patch level string #
+  parts = do.call(rbind, strsplit(names(counts), "_"))
+  codons = as.numeric(parts[,1])
+  msas = parts[,2]
+
+  # order by msa then codon numeric
+  ord = order(msas, codons)
+
+  # reconstruct, replicating by count
+  ordered_ids = rep(names(counts)[ord], times = counts[ord])
+
+  # final patch string
+  patch = paste(ordered_ids, collapse = "+")
 }
 
-# extend_msa() ----
-
-#' Merge Patch MSAs Across Structural Chains or Regions
-#'
-#' This function extends residue- and patch-level alignment data across independently aligned chains
-#' or MSA regions that share a common codon reference. It merges patch metadata and corresponding
-#' MSA subsets across input alignment sets, resolving codon patches, rescuing orphaned mappings, and
-#' concatenating per-codon MSA slices across chains or models.
-#'
-#' @param aln_info_set1 A named list from \code{aln_msa_to_pdb()} or previous \code{extend_msa()} output.
-#' @param aln_info_set2 A second alignment info set from another chain or region (also from \code{aln_msa_to_pdb()} or \code{extend_pdb()}).
-#' @param msa_info_set A named list of full MSA matrices from \code{WRAPPER_msa_to_ref()}, containing \code{msa1}, \code{msa2}, etc.
-#' @param use_sample_names Logical; if \code{TRUE}, sequences will be matched by FASTA header during MSA merging. If \code{FALSE}, rows are merged by order.
-#'
-#' @return A list with:
-#' \describe{
-#'   \item{\code{msa_subsets}}{A combined list of MSA patch subsets, merged across MSAs and structural chains.}
-#'   \item{\code{aln_df}}{A residue-level metadata table that includes merged patch and codon information across inputs.}
-#' }
-#'
-#' @details
-#' This function enables chain-aware patch merging by propagating patch definitions across residue matches
-#' and codon positions shared across independently aligned structures. Codon-level MSA subsets are updated
-#' to reflect the union of observed residues across chains. Interface rows are preserved, and orphans
-#' (residues with MSA mapping but no associated patch) are rescued using cross-reference with the alternate chain.
-#'
-#' Repeated calls to \code{extend_msa()} allow recursive merging of additional chains or MSA blocks.
-#'
-#' @seealso \code{\link{extend_pdb}}, \code{\link{aln_msa_to_pdb}}, \code{\link{WRAPPER_msa_to_ref}}
-#' @export
-extend_msa_old = function(aln_info_set1, aln_info_set2, msa_info_set, use_sample_names = TRUE) {
-
-  # take in two aln_info sets that share an underlying pdb structure #
-  # -- look for shared residue_ids across pdb columns #
-  # -- if msa_info provided: rescue orphans (codon_patch exists, codon is NA) #
-  # -- concatenate msa_subsets for matching residue positions #
-  # -- preserve interfaces and handle multi-pdb column structure #
-  # This function can be used recursively and can be used on outputs from aln_msa_to_pdb() or extend_pdb() #
-  # both those dataframes have one codon column -- and no need to track msa #
-  # first thing we will do here is add msa column so we can append other msas #
-
-  # -- step 1 ~ FORMATTING THESE DATASETS ----
-  extended_aln_df = aln_info_set1$aln_df
-  additional_aln_df = aln_info_set2$aln_df
-
-  # Check if this is first extend_msa() call or recursive
-  cols = colnames(extended_aln_df)
-  if(!'msa' %in% cols){
-    # this is output from aln_msa_to_pdb() or extend_pdb() #
-    next_msa = 2
-
-    # add msa column to track source #
-    extended_aln_df$msa = 1
-
-    # add msa1 tag to codon msa subsets #
-    msa_names = names(aln_info_set1$msa_subsets)
-    pos = grep('^codon', msa_names)
-    if(length(pos) > 0) {
-      names(aln_info_set1$msa_subsets)[pos] = paste0('msa1_', msa_names[pos])
-    }
-
-    # add msa1 tag to msa_subset_id in extended_aln_df #
-    codon_rows = grep('^codon_', extended_aln_df$msa_subset_id)
-    if(length(codon_rows) > 0) {
-      extended_aln_df$msa_subset_id[codon_rows] = paste0('msa1_', extended_aln_df$msa_subset_id[codon_rows])
-    }
-
-  } else {
-    # this is output from previous extend_msa() -- what count are we on #
-    max_msa = max(extended_aln_df$msa, na.rm = TRUE)
-    next_msa = max_msa + 1
-
-  }
-
-  # lets update additional_aln_df ( always expected to be from extend_pdb() or from aln_msa_to_pdb() )
-  additional_aln_df$msa = next_msa
-
-  # add msa tag to msa_subsets
-  msa_names = names(aln_info_set2$msa_subsets)
-  pos = grep('^codon', msa_names)
-  if(length(pos) > 0) {
-    names(aln_info_set2$msa_subsets)[pos] = paste0('msa', next_msa, '_', msa_names[pos])
-  }
-
-  # add msa tag to msa_subset_id in additional_aln_df #
-  codon_rows = grep('^codon_', additional_aln_df$msa_subset_id)
-  if(length(codon_rows) > 0) {
-    additional_aln_df$msa_subset_id[codon_rows] = paste0('msa', next_msa, '_', additional_aln_df$msa_subset_id[codon_rows])
-  }
-
-  # all patches in these two data frames are from $msa
-  extended_aln_df$patch_msa = extended_aln_df$msa
-  additional_aln_df$patch_msa = additional_aln_df$msa
-
-  # store interfaces (which are not tied to codons) we will merge on common pdbX_residue id # ----
-  cols1 = colnames(extended_aln_df)[grep("residue_id$", colnames(extended_aln_df))]
-  cols2 = colnames(additional_aln_df)[grep("residue_id$", colnames(additional_aln_df))]
-  int1 = which(rowSums(sapply(cols1, function(col) grepl("^interface", extended_aln_df[[col]]))) > 0)
-  int2 = which(rowSums(sapply(cols2, function(col) grepl("^interface", additional_aln_df[[col]]))) > 0)
-
-  interfaces = rbind(extended_aln_df[int1, , drop = FALSE],
-                     additional_aln_df[int2, , drop = FALSE])
-
-  if(length(int1) > 0) {
-    extended_aln_df = extended_aln_df[-c(int1),]
-  }
-
-  if(length(int2) > 0) {
-    additional_aln_df = additional_aln_df[-c(int2),]
-  }
-
-  # step 2 -- extend unmapped residues (orphans) across pdbs ----
-
-  # store those codon and interface rows #
-  #
-  ready1 = which(!is.na(extended_aln_df$codon))
-  ready2 = which(!is.na(additional_aln_df$codon))
-
-  # Check for orphans
-  has_orphans1 = (nrow(extended_aln_df) > length(ready1))
-  has_orphans2 = (nrow(additional_aln_df) > length(ready2))
-
-  if(has_orphans1){
-
-    # WE WILL MERGE ORPHANS ACROSS PEBS USING THEIR CODON POSITION #
-    # THESE ADDITIONS NEED TO BE STORED TO LATER ADD TO extended_aln_df #
-    # SOME ORPHANS MAP TO DIFFERENT MSA SET -- in this case they should be saved for later #
-
-    # grab orphaned data
-    orphan_df = extended_aln_df[-ready1, ]
-    orphan_df$track_id = 1:nrow(orphan_df)  # add track_id to keep track of orphans
-    used_ids = c()
-
-    # look for residue id matches in proper pdb column -- save patch to that row #
-    codon_map = additional_aln_df[!is.na(additional_aln_df$codon), c("codon", "msa", cols2, 'msa_subset_id', 'patch_msa')]
-    codon_map$patch_msa = NA
-    filled_codon_map1 = codon_map[0,]
-
-    # for each column in cols 1 grab its codon_patch and see if we can find its residue in that column in codon map
-    msa_save1 = list()
-    for(msa_num in unique(orphan_df$msa)) {
-
-      # filter orphan_df for current msa_id
-      orphan_sub = orphan_df[orphan_df$msa == msa_num, ]
-
-      # store codon_map for current msa_num #
-      hold_codon_map = codon_map
-
-      # builds codon_map for current msa_num -- across pdbs #
-      # aka residue touched msa1 and now we want its msa2 codon #
-      for (col in cols1) {
-        if (!col %in% cols2) next # skip if col not in additional_aln_df #
-
-        # find residue_id in codon_map #
-        # i dont think != '-' is needed here? how can a gap have a patch
-        df = orphan_sub[!is.na(orphan_sub[[col]]) & orphan_sub[[col]] != '-', c(col, 'codon_patch', 'track_id')]
-        if (nrow(df) == 0){
-          next
-        }
-
-        # keep track of which will actually merge in #
-        will_merge = which(df[[col]] %in% hold_codon_map[[col]])
-        used_ids = c(used_ids, df$track_id[will_merge])
-        # drop track id
-        df$track_id = NULL
-
-        colnames(df)[2] = paste0(gsub('[_]*residue_id', '', col), '_codon_patch')
-
-        hold_codon_map = merge(hold_codon_map, df, by = col, all.x = TRUE)
-      }
-
-      # Keep rows where at least one codon_patch column has data
-      patches = grep('codon_patch', colnames(hold_codon_map), value = TRUE)
-      hold_codon_map = hold_codon_map[rowSums(sapply(patches, function(col) !is.na(hold_codon_map[[col]]))) > 0,]
-
-      # now for each row -- do union patch # ##NOTE IF EVER ADDING INTERSECT PATCH TO extend_pdb() -- we would want to do it here too #
-      hold_codon_map$codon_patch = NA
-      for(i in 1:nrow(hold_codon_map)) {
-        combine_patch = hold_codon_map[i, patches]
-        combine_patch = combine_patch[!is.na(combine_patch)]
-        combine_patch = paste(combine_patch, collapse = '+')
-        combine_patch = unique(unlist(strsplit(combine_patch, '\\+')))
-
-        # remove previous tags # - or do they need stored?
-        combine_patch = gsub('_[0-9]+$', '', combine_patch)
-
-        combine_patch = sort(as.numeric(combine_patch))
-
-        hold_codon_map$codon_patch[i] = paste0(combine_patch, collapse = '+')
-      }
-
-      # now we have final patches for all the orphans of df1
-      save_sub = .extract_msa_subsets(msa_info_set[[paste0('msa', msa_num)]]$msa_mat, hold_codon_map)
-      names(save_sub) = paste0(names(save_sub), '_pulling_msa', msa_num)
-
-      # save msas (grows across msas in extend_aln_df)
-      msa_save1 = c(msa_save1, save_sub)
-
-      # add hold_codon_map to filled_codon_map #
-      hold_codon_map$patch_msa = msa_num
-      filled_codon_map1 = rbind(filled_codon_map1, hold_codon_map[c('codon', 'msa', 'codon_patch', 'patch_msa', 'msa_subset_id')])
-
-    }
-
-    # which orphans were used and which are waiting for different msa? #
-    still_orphan1 = orphan_df[!orphan_df$track_id %in% used_ids,]
-    still_orphan1$track_id = NULL
-
-    # may want to keep all orphan data -- and signal if it was mapped or not #
-
-  }
-
-  if(has_orphans2){
-
-    orphan_df = additional_aln_df[-ready2, ]
-    orphan_df$track_id = 1:nrow(orphan_df)  # add track_id to keep track of orphans
-    used_ids = c()
-
-    # this is msa extension but we need to pair residue_id from df1 to their df2 residue and codon #
-    codon_map = extended_aln_df[!is.na(extended_aln_df$codon), c("codon", "msa", cols1, 'msa_subset_id', 'patch_msa')]  # msa 2 but we will use to find resi from msa1 df
-    codon_map$patch_msa = next_msa
-    #filled_codon_map2 = codon_map[0,] -- since all patch_msa source are msa_next - we can collect at the end #
-
-    # for each column in cols 1 grab its codon_patch and see if we can find its residue in that column in codon map
-    for(col in cols2){
-      if(!col %in% cols1) next
-
-      # find residue_id in codon_map #
-      df = orphan_df[!is.na(orphan_df[[col]]) & orphan_df[[col]] != '-', c(col, 'codon_patch', 'track_id')]
-      if(nrow(df) == 0) next
-
-      # keep track of which will actually merge in #
-      will_merge = which(df[[col]] %in% codon_map[[col]])
-      used_ids = c(used_ids, df$track_id[will_merge])
-      # drop track id
-      df$track_id = NULL
-
-      colnames(df)[2] = paste0(gsub('[_]*residue_id', '', col), '_codon_patch')
-
-      codon_map = merge(codon_map, df, by = col, all.x = TRUE)
-    }
-
-    # now we have codon_map1 with codon_patch and residue_id from df1 #
-
-    # Keep rows where at least one codon_patch column has data
-    patches = grep('codon_patch', colnames(codon_map), value = TRUE)
-    codon_map = codon_map[rowSums(sapply(patches, function(col) !is.na(codon_map[[col]]))) > 0,]
-
-    # now for each row -- do union patch # ##NOTE IF EVER ADDING INTERSECT PATCH TO extend_pdb() -- we would want to do it here too #
-    codon_map$codon_patch = NA
-    for(i in 1:nrow(codon_map)) {
-      combine_patch = codon_map[i, patches]
-      combine_patch = combine_patch[!is.na(combine_patch)]
-      combine_patch = paste(combine_patch, collapse = '+')
-      combine_patch = unique(unlist(strsplit(combine_patch, '\\+')))
-      combine_patch = sort(as.numeric(combine_patch))
-
-      combine_patch = gsub('_[0-9]+$', '', combine_patch)
-
-      codon_map$codon_patch[i] = paste0(combine_patch, collapse = '+')
-    }
-
-    # now go by msa_num in codon_map ~ to grab msa subsets #
-    msa_save2 = list()
-    for(msa_num in unique(codon_map$msa)){
-
-      codon_sub = codon_map[codon_map$msa == msa_num, ]
-
-      # now we have final patches for all the orphans of df1
-      # save as msaX_codon_X_msa1 and tack on too where?
-      save_sub = .extract_msa_subsets(msa_info_set[[paste0('msa', next_msa)]]$msa_mat, codon_sub)
-      names(save_sub) = paste0(names(save_sub), '_pulling_msa', next_msa)
-
-      msa_save2 = c(msa_save2, save_sub)
-    }
-
-    # which orphans were used and which are waiting for different msa? #
-    still_orphan2 = orphan_df[!orphan_df$track_id %in% used_ids,]
-    still_orphan2$track_id = NULL
-
-    # need codon_map for additional patch info #
-    filled_codon_map2 = codon_map[, c("codon", "msa", "codon_patch", "patch_msa", 'msa_subset_id')]
-  }
-
-  # step3 --- ready to rbind data frames and concatonate msa_subsets ----
-
-  # at this point all data is ready to merge #
-  # 1. extended_aln_df[ready1,] -- having codon X msa Y and its patch
-  #    -- msa subsets are in aln_info_set1$msa_subsets (msaY_codonX)
-  # 2. additional_aln_df[ready2,] -- having codox X msa Z and its patch
-  #    -- msa subsets are in aln_info_set2$msa_subsets (msaZ_codonX)
-  # 3. filled_codon_map1 -- having pdb residues that touch msa Y but come from msa Z
-  #    -- msa subsets are in msa_save1
-  # 4. filled_codon_map2 -- having pdb residues that touch msa Z but come from msa Y (Y can be multiple msa)
-  #    -- msa subsets are in msa_save2
-  # 5. still_orphan1 -- pdb residues that touch Y but have not found their home msa
-  # 6. still_orphan2 -- pdb residues that touch Z but have not found their home msa
-
-  # so 1 and 4 will go together (focal residue is codonX msaY)
-  # and 2 and 3 will go together (focal residue is codonX msaZ)
-
-  # update patch for these top 4 datasets -- their patch to msa pull is done #
-  add_msa_tag = function(patch, tag){
-    if(is.na(patch)) return(NA)
-    if(grepl('_', patch)) return(patch)  # already has msa tag
-    patch = strsplit(patch, '\\+')[[1]]
-    patch = paste0(patch, '_', tag)
-    patch = paste(patch, collapse = '+')
-    return(patch)
-  }
-
-  clean1 = extended_aln_df[ready1,]
-  clean1$codon_patch = mapply(add_msa_tag, clean1$codon_patch, clean1$patch_msa, USE.NAMES = FALSE)
-
-  clean2 = additional_aln_df[ready2,]
-  clean2$codon_patch = mapply(add_msa_tag, clean2$codon_patch, clean2$patch_msa, USE.NAMES = FALSE)
-
-  filled_codon_map1$codon_patch = mapply(add_msa_tag, filled_codon_map1$codon_patch, filled_codon_map1$patch_msa, USE.NAMES = FALSE)
-  filled_codon_map2$codon_patch = mapply(add_msa_tag, filled_codon_map2$codon_patch, filled_codon_map2$patch_msa, USE.NAMES = FALSE)
-
-  interfaces$codon_patch = mapply(add_msa_tag, interfaces$codon_patch, interfaces$patch_msa, USE.NAMES = FALSE)
-
-  # clean1 and clean2 have full codon to msa maps #
-  # add codon_patch from filled2 to clean1
-  for(i in 1:nrow(filled_codon_map2)) {
-    codon = filled_codon_map2$codon[i]
-    msa = filled_codon_map2$msa[i]
-    patch = filled_codon_map2$codon_patch[i]
-    patch_msa = filled_codon_map2$patch_msa[i]
-
-    # find codon in clean1 and join this data #
-    idx = which(clean1$codon == codon & clean1$msa == msa)
-    if(length(idx) > 0) {
-      clean1$codon_patch[idx] = paste(clean1$codon_patch[idx], patch, sep = '+')
-    }
-
-    # pdbs can also be concatonated #
-    msa1 = aln_info_set1$msa_subsets[[paste0('msa', msa, '_codon_', codon)]]
-    msa2 = msa_save2[[paste0('msa', msa, '_codon_', codon, '_pulling_msa', patch_msa)]]
-
-    # if use_names_true -- then we concate on common name #
-    # other wise just concatenate the two #
-    if(use_sample_names) {
-      names1 = rownames(msa1)
-      names2 = rownames(msa2)
-      reorder_msa2 = match(names1, names2)
-
-      # see if any data is dropped #
-      valid_match = !is.na(reorder_msa2)
-      names1_valid = names1[valid_match]
-      reorder_msa2_valid = reorder_msa2[valid_match]
-
-      # print (later store) -- if any data is dropped #
-      if(length(valid_match) != length(names1)){
-        print('Warning: some data is dropped when merging msa subsets:')
-        print('use_sample_names = TRUE ... so msa\'s are matched by fasta headers')
-        print('this ensures valid msa subsetting for sequence based statistics')
-        print('it could be turned off for single site stats like entropy -- but')
-        print('you risk pulling gene information from entirely different genomic samples')
-        print(paste0('dropped ', length(names1) - length(names1_valid), ' sequences'))
-        print(paste0('for msa subset built on ', paste0('msa', msa, '_codon_', codon) ))
-      }
-
-      msa1 = msa1[names1_valid,]
-      msa2 = msa2[reorder_msa2_valid,]
-
-      # now we can merge the two #
-      merged_msa = cbind(msa1, msa2)
-
-      # overwrite the msa subset in aln_info_set1 #
-      aln_info_set1$msa_subsets[[paste0('msa', msa, '_codon_', codon)]] = merged_msa
-    } else {
-      # just combine all available rows #
-      min_ro = min(nrow(msa1), nrow(msa2))
-      merged_msa = cbind(msa1[1:min_ro,], msa2[1:min_ro,])
-      aln_info_set1$msa_subsets[[paste0('msa', msa, '_codon_', codon)]] = merged_msa
-    }
-
-  }
-
-  # add codon_patch from filled1 to clean2 #should be seq_len()
-  for(i in 1:nrow(filled_codon_map1)) {
-    codon = filled_codon_map1$codon[i]
-    msa = filled_codon_map1$msa[i]
-    patch = filled_codon_map1$codon_patch[i]
-    patch_msa = filled_codon_map1$patch_msa[i]
-
-    # find codon in clean1 and join this data #
-    idx = which(clean2$codon == codon & clean2$msa == msa)
-    if(length(idx) > 0) {
-      clean2$codon_patch[idx] = paste(clean2$codon_patch[idx], patch, sep = '+')
-    }
-
-    # pdbs can also be concatonated #
-    msa1 = aln_info_set2$msa_subsets[[paste0('msa', msa, '_codon_', codon)]]
-    msa2 = msa_save1[[paste0('msa', msa, '_codon_', codon, '_pulling_msa', patch_msa)]]
-
-    # if use_names_true -- then we concate on common name #
-    # other wise just concatenate the two #
-    if(use_sample_names) {
-      names1 = rownames(msa1)
-      names2 = rownames(msa2)
-      reorder_msa2 = match(names1, names2)
-
-      # see if any data is dropped #
-      valid_match = !is.na(reorder_msa2)
-      names1_valid = names1[valid_match]
-      reorder_msa2_valid = reorder_msa2[valid_match]
-
-      # print (later store) -- if any data is dropped #
-      if(length(valid_match) != length(names1)){
-        print('Warning: some data is dropped when merging msa subsets:')
-        print('use_sample_names = TRUE ... so msa\'s are matched by fasta headers')
-        print('this ensures valid msa subsetting for sequence based statistics')
-        print('it could be turned off for single site stats like entropy -- but')
-        print('you risk pulling gene information from entirely different genomic samples')
-        print(paste0('dropped ', length(names1) - length(names1_valid), ' sequences'))
-        print(paste0('for msa subset built on ', paste0('msa', msa, '_codon_', codon) ))
-      }
-
-      msa1 = msa1[names1_valid,]
-      msa2 = msa2[reorder_msa2_valid,]
-
-      # now we can merge the two #
-      merged_msa = cbind(msa1, msa2)
-
-      # overwrite the msa subset in aln_info_set1 #
-      aln_info_set2$msa_subsets[[paste0('msa', msa, '_codon_', codon)]] = merged_msa
-    } else {
-      # just combine all available rows #
-      min_ro = min(nrow(msa1), nrow(msa2))
-      merged_msa = cbind(msa1[1:min_ro,], msa2[1:min_ro,])
-      aln_info_set2$msa_subsets[[paste0('msa', msa, '_codon_', codon)]] = merged_msa
-    }
-
-  }
-
-  # step 4: merge interfaces -- check names too (needs work) ----
-  unique_interface_ids = unique(interfaces$msa_subset_id)
-
-  # Handle common interfaces between the two msa_subset lists
-  names1 = names(aln_info_set1$msa_subsets)
-  names2 = names(aln_info_set2$msa_subsets)
-
-  # Find interfaces that exist in both
-  common_interfaces = intersect(names1[grep('^interface_', names1)],
-                                names2[grep('^interface_', names2)])
-
-  # Combine MSA subsets for common interfaces
-  for(interface_name in common_interfaces) {
-    msa1 = aln_info_set1$msa_subsets[[interface_name]]
-    msa2 = aln_info_set2$msa_subsets[[interface_name]]
-
-    if(use_sample_names) {
-      names1 = rownames(msa1)
-      names2 = rownames(msa2)
-      reorder_msa2 = match(names1, names2)
-
-      valid_match = !is.na(reorder_msa2)
-      names1_valid = names1[valid_match]
-      reorder_msa2_valid = reorder_msa2[valid_match]
-
-      if(length(valid_match) != length(names1)){
-        print(paste0('Warning: dropped ', length(names1) - length(names1_valid), ' sequences for interface ', interface_name))
-      }
-
-      msa1 = msa1[names1_valid,]
-      msa2 = msa2[reorder_msa2_valid,]
-
-      combined_msa = cbind(msa1, msa2)
-    } else {
-      min_rows = min(nrow(msa1), nrow(msa2))
-      combined_msa = cbind(msa1[1:min_rows,], msa2[1:min_rows,])
-    }
-
-    # Store combined version
-    aln_info_set1$msa_subsets[[interface_name]] = combined_msa
-  }
-
-  # Collapse duplicate interfaces by msa_subset_id
-  if(nrow(interfaces) > 0) {
-
-    # Group by msa_subset_id and collapse
-    unique_interface_ids = unique(interfaces$msa_subset_id)
-    collapsed_interfaces = data.frame()
-
-    for(interface_id in unique_interface_ids) {
-      interface_rows = interfaces[interfaces$msa_subset_id == interface_id, ]
-
-      if(nrow(interface_rows) == 1) {
-        # Single row, just add it
-        collapsed_row = interface_rows
+# .union_exposure_distance() ----
+.union_exposure_distance = function(patches, valid_codons){
+
+  # drop NA patches
+  patches = patches[!is.na(patches)]
+  if(length(patches) == 0) return(NA)
+
+  sets = strsplit(patches, '\\+')
+
+  #1_msa1+2_msa1+3_msa1+4_msa1 -- turn to counts 1_msa1(1), 2_msa1(1), 3_msa1(2) -- union will keep the highest count for each codon #
+  patch_counts = lapply(sets, table)
+  all_codons = unique(unlist(sets))
+
+  mat = sapply(patch_counts, function(tab) {
+    out = integer(length(all_codons))
+    names(out) = all_codons
+    out[names(tab)] = tab
+    out
+  })
+
+  counts = apply(mat, 1, max)
+
+  # unpack back to patch level string #
+  parts = do.call(rbind, strsplit(names(counts), "_"))
+  codons = as.numeric(parts[,1])
+  msas = parts[,2]
+
+  # order by msa then codon numeric
+  ord = order(msas, codons)
+
+  # reconstruct, replicating by count
+  ordered_ids = rep(names(counts)[ord], times = counts[ord])
+
+  # filter out non valid codons
+
+  # final patch string
+  patch = paste(ordered_ids, collapse = "+")
+}
+
+# .variable_size_merge() ----
+.variable_size_merge <- function(codon_df, residue_df, merge_type = c("distance", "exposure_distance"),
+                                 only_exposed_in_patch = FALSE) {
+  merge_type <- match.arg(merge_type)
+
+  codon_ids <- unique(codon_df$codon_id)
+  codon_ids <- codon_ids[!is.na(codon_ids)]
+
+  if (merge_type == "distance") {
+    # Geometry only: only rebuild when >1 residue
+    new_p <- lapply(codon_ids, function(x) {
+      ro <- which(residue_df$codon_id == x)
+      if (length(ro) > 1) {
+        .union_distance(residue_df$codon_patch[ro])
+      } else if (length(ro) == 1) {
+        residue_df$codon_patch[ro]
       } else {
-        # Multiple rows, combine patches
-        collapsed_row = interface_rows[1, ]  # take first row as template
+        NA
+      }
+    })
+    hold <- data.frame(codon_id = codon_ids, codon_patch = unlist(new_p))
 
-        # Combine all codon_patches
-        all_patches = interface_rows$codon_patch
-        all_patches = all_patches[!is.na(all_patches)]
-        if(length(all_patches)>0){
-          combined_patch = paste(all_patches, collapse = '+')
-        } else {
-          combined_patch = NA
-        }
-          collapsed_row$codon_patch = combined_patch
+  } else if (merge_type == "exposure_distance" && !only_exposed_in_patch) {
+    # Allow buried members: same as distance, then filter buried seeds
+    valid_codons <- codon_df$codon_id[codon_df$exposed]
+    valid_codons <- valid_codons[!is.na(valid_codons)]
+
+    new_p <- lapply(codon_ids, function(x) {
+      ro <- which(residue_df$codon_id == x)
+      if (length(ro) > 1) {
+        .union_distance(residue_df$codon_patch[ro])
+      } else if (length(ro) == 1) {
+        residue_df$codon_patch[ro]
+      } else {
+        NA
+      }
+    })
+    hold <- data.frame(codon_id = codon_ids, codon_patch = unlist(new_p))
+    # Seed-level exposure filter
+    hold$codon_patch[!hold$codon_id %in% valid_codons] <- NA
+
+  } else if (merge_type == "exposure_distance" && only_exposed_in_patch) {
+    # All residues (seeds + members) must be exposed, always rebuild
+    valid_codons <- codon_df$codon_id[codon_df$exposed]
+    valid_codons <- valid_codons[!is.na(valid_codons)]
+
+    new_p <- lapply(codon_ids, function(x) {
+      ro <- which(residue_df$codon_id == x)
+      if (length(ro) > 0) {
+        .union_exposure_distance(residue_df$codon_patch[ro], valid_codons)
+      } else {
+        NA
+      }
+    })
+    hold <- data.frame(codon_id = codon_ids, codon_patch = unlist(new_p))
+    # Explicitly drop buried seeds
+    hold$codon_patch[!hold$codon_id %in% valid_codons] <- NA
+  }
+
+  # Update codon_df with new patches
+  codon_df$codon_patch <- NA
+  codon_df$codon_patch[match(hold$codon_id, codon_df$codon_id)] <- hold$codon_patch
+
+
+
+  return(codon_df)
+}
+
+# .fixed_size_merge() ----
+.fixed_size_merge = function(codon_df, residue_df, patch_mode,
+                             max_patch,
+                             dist_cutoff, merge_type,
+                             pdb_info_sets, only_exposed_in_patch = TRUE){
+
+  # 8 types of merging [patch_mode C/R, merge_type D/E, only_exposed T/F] #
+  # CDT - codon deduplicated, closest distance, exposed w/i pdb context
+  # CDF* - codon deduplicated, closest distance, any exposure
+  # CET - codon deduplicated, closest distance, exposure from merge context
+  # CEF* - codon deduplicated, closest distance, any exposure [works with CDF] #
+
+  # RDT - closest residue, exposed w/i pdb context #
+  # RDF* - closest residue, any exposure
+  # RET - closest residue, merged exposure
+  # REF* - closest residue, any exposure [works with RDF]
+
+  # so six modes - and afterwards we can NA out buried seeds if merge_type E #
+
+  # grab a smaller residue df -- only for those with patches #
+  resolved_df = residue_df[!is.na(residue_df$codon_patch),]
+
+  # CDF / CEF ~ exposure no influence #
+  if(patch_mode == 'codon' && !only_exposed_in_patch){
+
+    # any closest residue - only count unique codons #
+    for(i in seq_len(nrow(codon_df))){
+      if(is.na(codon_df$exposed_count[i]) || codon_df$exposed_count[i] == 0) next
+
+      ro = which(resolved_df$codon_id == codon_df$codon_id[i])
+
+      if(length(ro) == 1){
+        codon_df$codon_patch[i] = resolved_df$codon_patch[i]
+        next
       }
 
-      # Set msa and patch_msa to NA for interfaces
-      collapsed_row$msa = NA
-      collapsed_row$patch_msa = NA
+      if(length(ro)>1){
 
-      collapsed_interfaces = rbind(collapsed_interfaces, collapsed_row)
+        dist_mats = lapply(ro, function(x){
+          id = resolved_df$residue_id[x]
+          pid = resolved_df$pdb[x]
+          d = pdb_info_sets[[pid]]$residue_dist[id,]
+
+          # drop if above dist_cutoff
+          if(!is.na(dist_cutoff)){
+            d = d[d <= dist_cutoff]
+          }
+
+          # replace ids with codon names #
+          map = setNames(
+            residue_df$codon_id[residue_df$pdb == pid],
+            residue_df$residue_id[residue_df$pdb == pid]
+          )
+
+          # replace names
+          names(d) = map[names(d)]
+          d
+        })
+
+        # piece together, sort by dist #
+        closest_codons = sort(unlist(dist_mats))
+
+        # deduplicate codons #
+        closest_codons = closest_codons[!duplicated(names(closest_codons))]
+
+        # grab either max patch or as many as possible #
+        closest_codons = closest_codons[seq_len(min(max_patch, length(closest_codons)))]
+
+        codon_df$codon_patch[i] = paste0(names(closest_codons), collapse = '+')
     }
 
-    # Replace interfaces with collapsed version
-    interfaces = collapsed_interfaces
   }
 
-  # not all columns are present so use set_diff #
-  all_cols = unique(c(colnames(clean1),
-                      colnames(clean2),
-                      colnames(interfaces),
-                      colnames(still_orphan1),
-                      colnames(still_orphan2)))
-
-  # Add missing columns to each dataframe
-  # if interfaces, still orphan1 or still orphan2
-
-  if(nrow(still_orphan1) > 0) {
-    still_orphan1[setdiff(all_cols, colnames(still_orphan1))] = NA
-  } else{
-    still_orphan1 = data.frame(matrix(NA, nrow = 0, ncol = length(all_cols)))
-    colnames(still_orphan1) = all_cols
   }
 
-  if(nrow(still_orphan2) > 0) {
-    still_orphan2[setdiff(all_cols, colnames(still_orphan2))] = NA
-  } else{
-    still_orphan2 = data.frame(matrix(NA, nrow = 0, ncol = length(all_cols)))
-    colnames(still_orphan2) = all_cols
+  # RDF / REF ~ exposure no influence. Use quota to add residues #
+  if(patch_mode == 'residue' && !only_exposed_in_patch){
+
+    # any closest residue - only count unique codons #
+    for(i in seq_len(nrow(codon_df))){
+      if(is.na(codon_df$exposed_count[i]) || codon_df$exposed_count[i] == 0) next
+
+      ro = which(resolved_df$codon_id == codon_df$codon_id[i])
+
+      if(length(ro) == 1){
+        codon_df$codon_patch[i] = resolved_df$codon_patch[i]
+        next
+      }
+
+      if(length(ro)>1){
+
+        dist_mats = lapply(ro, function(x){
+          id = resolved_df$residue_id[x]
+          pid = resolved_df$pdb[x]
+          d = pdb_info_sets[[pid]]$residue_dist[id,]
+
+          # drop if above dist_cutoff
+          if(!is.na(dist_cutoff)){
+            d = d[d <= dist_cutoff]
+          }
+
+          # replace ids with codon names #
+          map = setNames(
+            residue_df$codon_id[residue_df$pdb == pid],
+            residue_df$residue_id[residue_df$pdb == pid]
+          )
+
+          # replace names
+          names(d) = map[names(d)]
+          sort(d)
+        })
+
+        # contexts
+        contexts = paste0('context', seq_along(dist_mats))
+
+        # add context to dist_mats and unroll so we can sort by overall dist #
+        dist_mats = lapply(seq_along(dist_mats), function(x){
+          names(dist_mats[[x]]) = paste0('context', x, '_', names(dist_mats[[x]]))
+          dist_mats[[x]]
+        })
+
+
+
+        # piece together, sort by dist #
+        context_codons = sort(unlist(dist_mats))
+
+        # and remove context to just have codon
+        closest_codons = context_codons
+        names(closest_codons) = gsub('context[0-9]+_', '', names(closest_codons))
+
+        patch <- character()
+        while(length(closest_codons)) {
+          c1 <- closest_codons[1]
+          patch <- c(patch, c1)
+
+          for(c in contexts){
+            id <- paste0(c, '_', names(c1))
+            pos <- match(id, names(context_codons))
+            if(!is.na(pos)) {
+              closest_codons <- closest_codons[-pos[1]]
+              context_codons <- context_codons[-pos[1]]
+            }
+          }
+
+          if(length(patch) == max_patch) break
+        }
+
+        codon_df$codon_patch[i] = paste0(names(patch), collapse = '+')
+
+    }
+
+    }
+
   }
 
-  if(nrow(interfaces) > 0) {
-    interfaces[setdiff(all_cols, colnames(interfaces))] = NA
-  } else{
-    interfaces = data.frame(matrix(NA, nrow = 0, ncol = length(all_cols)))
-    colnames(interfaces) = all_cols
+  # CDT ~ codon deduplicated - exposed with pdb context #
+  if(patch_mode == 'codon' && only_exposed_in_patch && merge_type == 'distance'){
+
+    # any closest residue - only count unique codons #
+    for(i in seq_len(nrow(codon_df))){
+      if(is.na(codon_df$exposed_count[i]) || codon_df$exposed_count[i] == 0) next
+
+      ro = which(resolved_df$codon_id == codon_df$codon_id[i])
+
+      if(length(ro) == 1){
+        # good because it was exposed in pdb context #
+        codon_df$codon_patch[i] = resolved_df$codon_patch[i]
+        next
+      }
+
+      if(length(ro)>1){
+
+        dist_mats = lapply(ro, function(x){
+          id = resolved_df$residue_id[x]
+          pid = resolved_df$pdb[x]
+          d = pdb_info_sets[[pid]]$residue_dist[id,]
+
+          # drop if above dist_cutoff
+          if(!is.na(dist_cutoff)){
+            d = d[d <= dist_cutoff]
+          }
+
+          # keep residues that are exposed in their pdb context #
+          exp = residue_df$residue_id[residue_df$pdb == pid & residue_df$exposed]
+          exp = exp[!is.na(exp)]
+
+          d = d[names(d) %in% exp]
+
+          # replace ids with codon names #
+          map = setNames(
+            residue_df$codon_id[residue_df$pdb == pid],
+            residue_df$residue_id[residue_df$pdb == pid]
+          )
+
+          # replace names
+          names(d) = map[names(d)]
+          d
+        })
+
+        # piece together, sort by dist #
+        closest_codons = sort(unlist(dist_mats))
+
+        # deduplicate codons #
+        closest_codons = closest_codons[!duplicated(names(closest_codons))]
+
+        # grab either max patch or as many as possible #
+        closest_codons = closest_codons[seq_len(min(max_patch, length(closest_codons)))]
+
+        codon_df$codon_patch[i] = paste0(names(closest_codons), collapse = '+')
+      }
+
+    }
+
   }
 
-  if(nrow(clean1) > 0) {
-    clean1[setdiff(all_cols, colnames(clean1))] = NA
-  } else{
-    clean1 = data.frame(matrix(NA, nrow = 0, ncol = length(all_cols)))
-    colnames(clean1) = all_cols
+  # RDT ~ exposed withing pdb context - use quota counting #
+  if(patch_mode == 'residue' && only_exposed_in_patch && merge_type == 'distance'){
+
+    # any closest residue - only count unique codons #
+    for(i in seq_len(nrow(codon_df))){
+      if(is.na(codon_df$exposed_count[i]) || codon_df$exposed_count[i] == 0) next
+
+      ro = which(resolved_df$codon_id == codon_df$codon_id[i])
+
+      if(length(ro) == 1){
+        codon_df$codon_patch[i] = resolved_df$codon_patch[i]
+        next
+      }
+
+      if(length(ro)>1){
+
+        dist_mats = lapply(ro, function(x){
+          id = resolved_df$residue_id[x]
+          pid = resolved_df$pdb[x]
+          d = pdb_info_sets[[pid]]$residue_dist[id,]
+
+          # drop if above dist_cutoff
+          if(!is.na(dist_cutoff)){
+            d = d[d <= dist_cutoff]
+          }
+
+          # keep residues that are exposed in their pdb context #
+          exp = residue_df$residue_id[residue_df$pdb == pid & residue_df$exposed]
+          exp = exp[!is.na(exp)]
+
+          d = d[names(d) %in% exp]
+
+          # replace ids with codon names #
+          map = setNames(
+            residue_df$codon_id[residue_df$pdb == pid],
+            residue_df$residue_id[residue_df$pdb == pid]
+          )
+
+          # replace names
+          names(d) = map[names(d)]
+          sort(d)
+        })
+
+        # contexts
+        contexts = paste0('context', seq_along(dist_mats))
+
+        # add context to dist_mats and unroll so we can sort by overall dist #
+        dist_mats = lapply(seq_along(dist_mats), function(x){
+          names(dist_mats[[x]]) = paste0('context', x, '_', names(dist_mats[[x]]))
+          dist_mats[[x]]
+        })
+
+
+
+        # piece together, sort by dist #
+        context_codons = sort(unlist(dist_mats))
+
+        # and remove context to just have codon
+        closest_codons = context_codons
+        names(closest_codons) = gsub('context[0-9]+_', '', names(closest_codons))
+
+        patch <- character()
+        while(length(closest_codons)) {
+          c1 <- closest_codons[1]
+          patch <- c(patch, c1)
+
+          for(c in contexts){
+            id <- paste0(c, '_', names(c1))
+            pos <- match(id, names(context_codons))
+            if(!is.na(pos)) {
+              closest_codons <- closest_codons[-pos[1]]
+              context_codons <- context_codons[-pos[1]]
+            }
+          }
+
+          if(length(patch) == max_patch) break
+        }
+
+        codon_df$codon_patch[i] = paste0(names(patch), collapse = '+')
+
+      }
+
+    }
+
   }
 
-  if(nrow(clean2) > 0) {
-    clean2[setdiff(all_cols, colnames(clean2))] = NA
-  } else{
-    clean2 = data.frame(matrix(NA, nrow = 0, ncol = length(all_cols)))
-    colnames(clean2) = all_cols
+  # CET ~ codon deduplicated - exposed in merged table #
+  if(patch_mode == 'codon' && only_exposed_in_patch && merge_type == 'exposure_distance'){
+
+    # any closest residue - only count unique codons #
+    for(i in seq_len(nrow(codon_df))){
+      if(is.na(codon_df$exposed_count[i]) || codon_df$exposed_count[i] == 0) next
+
+      ro = which(resolved_df$codon_id == codon_df$codon_id[i])
+
+      if(length(ro) == 1){
+        # good because it was exposed in pdb context #
+        codon_df$codon_patch[i] = resolved_df$codon_patch[i]
+        next
+      }
+
+      if(length(ro)>1){
+
+        dist_mats = lapply(ro, function(x){
+          id = resolved_df$residue_id[x]
+          pid = resolved_df$pdb[x]
+          d = pdb_info_sets[[pid]]$residue_dist[id,]
+
+          # drop if above dist_cutoff
+          if(!is.na(dist_cutoff)){
+            d = d[d <= dist_cutoff]
+          }
+
+          # replace ids with codon names #
+          map = setNames(
+            residue_df$codon_id[residue_df$pdb == pid],
+            residue_df$residue_id[residue_df$pdb == pid]
+          )
+
+          # replace names
+          names(d) = map[names(d)]
+
+          # filter exposed
+          exp = codon_df$codon_id[codon_df$exposed]
+          exp = exp[!is.na(exp)]
+
+          d = d[names(d) %in% exp]
+        })
+
+        # piece together, sort by dist #
+        closest_codons = sort(unlist(dist_mats))
+
+        # deduplicate codons #
+        closest_codons = closest_codons[!duplicated(names(closest_codons))]
+
+        # grab either max patch or as many as possible #
+        closest_codons = closest_codons[seq_len(min(max_patch, length(closest_codons)))]
+
+        codon_df$codon_patch[i] = paste0(names(closest_codons), collapse = '+')
+      }
+
+    }
+
   }
 
-  #clean1[setdiff(all_cols, colnames(clean1))] = NA
-  #clean2[setdiff(all_cols, colnames(clean2))] = NA
-  #interfaces[setdiff(all_cols, colnames(interfaces))] = NA
-  #still_orphan1[setdiff(all_cols, colnames(still_orphan1))] = NA
-  #still_orphan2[setdiff(all_cols, colnames(still_orphan2))] = NA
+  # RET ~ exposed in merged table
+  if(patch_mode == 'residue' && only_exposed_in_patch && merge_type == 'exposure_distance'){
 
-  # rbind all dataframes together #
-  full_set = rbind(clean1, clean2, interfaces, still_orphan1, still_orphan2)
+    # any closest residue - only count unique codons #
+    for(i in seq_len(nrow(codon_df))){
+      if(is.na(codon_df$exposed_count[i]) || codon_df$exposed_count[i] == 0) next
 
-  # skip for now due to gaps #
-  #full_set = full_set[order(as.numeric(full_set$msa), as.numeric(full_set$codon)),]
+      ro = which(resolved_df$codon_id == codon_df$codon_id[i])
 
-  # reorder columns - include msa_subset_id #
-  pdb_residue_cols = grep('pdb[0-9]+_residue', colnames(full_set), value = TRUE)
-  pdb_aa_cols = grep('pdb[0-9]+_aa', colnames(full_set), value = TRUE)
+      if(length(ro) == 1){
+        codon_df$codon_patch[i] = resolved_df$codon_patch[i]
+        next
+      }
 
-  col_order = c('msa', 'codon', 'ref_aa', 'msa_subset_id',
-                pdb_residue_cols, pdb_aa_cols,
-                'codon_patch', 'patch_msa')
+      if(length(ro)>1){
 
-  col_order = c(col_order, setdiff(colnames(full_set), col_order))
-  full_set = full_set[, col_order]
+        dist_mats = lapply(ro, function(x){
+          id = resolved_df$residue_id[x]
+          pid = resolved_df$pdb[x]
+          d = pdb_info_sets[[pid]]$residue_dist[id,]
 
-  # copy over msa sets #
-  full_msa = aln_info_set1$msa_subsets
-  full_msa = c(full_msa, aln_info_set2$msa_subsets)
+          # drop if above dist_cutoff
+          if(!is.na(dist_cutoff)){
+            d = d[d <= dist_cutoff]
+          }
 
-  full_msa = full_msa[!grepl('^residue', names(full_msa))]  # remove residue msa's #
+          # replace ids with codon names #
+          map = setNames(
+            residue_df$codon_id[residue_df$pdb == pid],
+            residue_df$residue_id[residue_df$pdb == pid]
+          )
 
-  # any interfaces (NA missed) #
+          # replace names
+          names(d) = map[names(d)]
+          sort(d)
 
-  #
+          # drop buried
+          # keep residues that are exposed in their pdb context #
+          exp = codon_df$codon_id[codon_df$exposed]
+          exp = exp[!is.na(exp)]
 
-  return(
-    list(
-      msa_subsets = full_msa,
-      aln_df = full_set
+          d = d[names(d) %in% exp]
+
+        })
+
+        # contexts
+        contexts = paste0('context', seq_along(dist_mats))
+
+        # add context to dist_mats and unroll so we can sort by overall dist #
+        dist_mats = lapply(seq_along(dist_mats), function(x){
+          names(dist_mats[[x]]) = paste0('context', x, '_', names(dist_mats[[x]]))
+          dist_mats[[x]]
+        })
+
+
+
+        # piece together, sort by dist #
+        context_codons = sort(unlist(dist_mats))
+
+        # and remove context to just have codon
+        closest_codons = context_codons
+        names(closest_codons) = gsub('context[0-9]+_', '', names(closest_codons))
+
+        patch <- character()
+        while(length(closest_codons)) {
+          c1 <- closest_codons[1]
+          patch <- c(patch, c1)
+
+          for(c in contexts){
+            id <- paste0(c, '_', names(c1))
+            pos <- match(id, names(context_codons))
+            if(!is.na(pos)) {
+              closest_codons <- closest_codons[-pos[1]]
+              context_codons <- context_codons[-pos[1]]
+            }
+          }
+
+          if(length(patch) == max_patch) break
+        }
+
+        codon_df$codon_patch[i] = paste0(names(patch), collapse = '+')
+
+      }
+
+    }
+
+  }
+
+  # do we need to NA out buried seeds #
+  if(merge_type == 'exposure_distance'){
+    codon_df$codon_patch[!codon_df$exposed] = NA
+  }
+
+  return(codon_df)
+
+}
+
+# collapse_to_codon() ----
+collapse_to_codon = function(residue_df, merge_type = 'exposure_distance', merge_exposure = 0.5,
+                              max_patch, only_exposed_in_patch = TRUE, patch_mode, dist_cutoff,
+                              merge_interface_surface, pdb_info_sets){
+
+  # options are distance and exposure_distance #
+  # if max_patch is NA it is a union build #
+  # if max_patch is set it is a fixed length build #
+  # will we need patch_type = residue or codon?
+  # if set codons are dedupped already so union will be fine #
+
+  # STEP 0 - store interfaces and gap map residues add later # ----
+  ro = grep('^interface', residue_df$residue_id)
+  if(length(ro)>0){
+    interf_df = residue_df[ro,]
+    residue_df = residue_df[-ro,]
+  } else {
+    interf_df = residue_df[0,,drop=FALSE]
+  } # lets try to keep (breaks .split_pdb_column - we will add later) #
+
+  # keep gap mapped residues in their original positions #
+  residue_df$upper_context = NA
+  residue_df$lower_context = NA
+
+  ro = which(residue_df$codon == '-')
+  if(length(ro)>0){
+    residue_df$codon_id[ro] = paste0(
+      residue_df$msa[ro], '_', residue_df$pdb[ro], '_', residue_df$residue_id[ro]
     )
-  )
 
-}
+    for (i in ro) {
+      # look upward until you hit a real codon
+      up = NA
+      j = i - 1
+      while (j >= 1 && residue_df$codon[j] == "-") j = j - 1
+      if (j >= 1) up = residue_df$codon_id[j]
 
-extend_msa = function(aln_info_set1, aln_info_set2, msa_info_set, use_sample_names = TRUE) {
+      # look downward until you hit a real codon
+      lo = NA
+      j = i + 1
+      while (j <= nrow(residue_df) && residue_df$codon[j] == "-") j = j + 1
+      if (j <= nrow(residue_df)) lo = residue_df$codon_id[j]
 
-  # -- step 1 ~ FORMATTING THESE DATASETS ----
-  extended_aln_df = aln_info_set1$aln_df
-  additional_aln_df = aln_info_set2$aln_df
-
-  # Check if this is first extend_msa() call or recursive
-  cols = colnames(extended_aln_df)
-  if(!'msa' %in% cols){
-    # this is output from aln_msa_to_pdb(), extend_pdb(), or extend_homomultimer() #
-    next_msa = 2
-
-    # add msa column to track source #
-    extended_aln_df$msa = 1
-
-    # add msa1 tag to codon msa subsets #
-    msa_names = names(aln_info_set1$msa_subsets)
-    pos = grep('^codon', msa_names)
-    if(length(pos) > 0) {
-      names(aln_info_set1$msa_subsets)[pos] = paste0('msa1_', msa_names[pos])
+      residue_df$upper_context[i] = up
+      residue_df$lower_context[i] = lo
     }
+  }
 
-    # add msa1 tag to msa_subset_id in extended_aln_df #
-    codon_rows = grep('^codon_', extended_aln_df$msa_subset_id)
-    if(length(codon_rows) > 0) {
-      extended_aln_df$msa_subset_id[codon_rows] = paste0('msa1_', extended_aln_df$msa_subset_id[codon_rows])
+  # split pdb column into individual pdb columns ----
+  codon_df = .split_pdb_column(residue_df)
+
+  # add back any gap mapped positions ----
+  if(length(ro)>0){
+    for (i in rev(ro)) {
+      id = residue_df$codon_id[i]
+      up = residue_df$upper_context[i]
+      lo = residue_df$lower_context[i]
+
+      # extract the codon_df row for this id
+      row_idx = which(codon_df$codon_id == id)
+      row_data = codon_df[row_idx, , drop = FALSE]
+
+      # drop it from current position
+      codon_df = codon_df[-row_idx, ]
+
+      # find new insertion point
+      if (!is.na(up) && up %in% codon_df$codon_id) {
+        insert_at = which(codon_df$codon_id == up) + 1
+      } else if (!is.na(lo) && lo %in% codon_df$codon_id) {
+        insert_at = which(codon_df$codon_id == lo)
+      } else {
+        insert_at = nrow(codon_df) + 1
+      }
+
+      # splice it back in
+      codon_df = rbind(
+        codon_df[seq_len(insert_at - 1), ],
+        row_data,
+        codon_df[seq(from = insert_at, to = nrow(codon_df)), ]
+      )
     }
+  }
+
+  residue_df$upper_context = NULL
+  residue_df$lower_context = NULL
+
+  # STEP 1 -- update exposure based on merge_exposure threshold ----
+  exp_count = aggregate(exposed ~ codon_id, data = residue_df, FUN = sum , na.rm = T)
+  codon_df$exposed_count = exp_count$exposed[match(codon_df$codon_id, exp_count$codon_id)]
+
+  # check against threshold (force NA to FALSE after checking against threshold)
+  codon_df$exposed = (codon_df$exposed_count / codon_df$resolved) > merge_exposure
+
+  # fix if exposed_count / resolved = 1 then include
+  codon_df$exposed = ifelse((codon_df$exposed_count / codon_df$resolved) == 1, TRUE, codon_df$exposed)
+
+  # STEP 3 -- uniting windows (distance, exposure_distance) ----
+  # if variable length - do either union (or exposure filtered union) #
+  # if fixed length and any position is more than once resolved - need to rebuild patch #
+  max_res = max(codon_df$resolved, na.rm = TRUE)
+
+  codon_df$codon_patch = NA
+  codon_df$max_dist = NA
+
+  if (max_res <= 1) {
+    # no codon has multiple environments - nothing to merge - just copy over info
+    codon_df$codon_patch[match(residue_df$codon_id, codon_df$codon_id)] = residue_df$codon_patch
+    codon_df$codon_len[match(residue_df$codon_id, codon_df$codon_id)] = residue_df$codon_len
+    codon_df$unique_codon[match(residue_df$codon_id, codon_df$codon_id)] = residue_df$unique_codon
+    codon_df$max_dist[match(residue_df$codon_id, codon_df$codon_id)] = residue_df$max_dist
 
   } else {
-    # this is output from previous extend_msa() -- what count are we on #
-    max_msa = max(extended_aln_df$msa, na.rm = TRUE)
-    next_msa = max_msa + 1
-
-  }
-
-  # lets update additional_aln_df ( always expected to be from extend_pdb(), extend_homomultimer() or from aln_msa_to_pdb() )
-  additional_aln_df$msa = next_msa
-
-  # add msa tag to msa_subsets
-  msa_names = names(aln_info_set2$msa_subsets)
-  pos = grep('^codon', msa_names)
-  if(length(pos) > 0) {
-    names(aln_info_set2$msa_subsets)[pos] = paste0('msa', next_msa, '_', msa_names[pos])
-  }
-
-  # add msa tag to msa_subset_id in additional_aln_df #
-  codon_rows = grep('^codon_', additional_aln_df$msa_subset_id)
-  if(length(codon_rows) > 0) {
-    additional_aln_df$msa_subset_id[codon_rows] = paste0('msa', next_msa, '_', additional_aln_df$msa_subset_id[codon_rows])
-  }
-
-  # all patches in these two data frames are from $msa
-  extended_aln_df$patch_msa = extended_aln_df$msa
-  additional_aln_df$patch_msa = additional_aln_df$msa
-
-  # -- step 2 ~ store interfaces (which are not tied to codons) we will merge on common pdbX_residue id # ----
-  cols1 = colnames(extended_aln_df)[grep("residue_id$", colnames(extended_aln_df))]
-  cols2 = colnames(additional_aln_df)[grep("residue_id$", colnames(additional_aln_df))]
-  int1 = which(rowSums(sapply(cols1, function(col) grepl("^interface", extended_aln_df[[col]]))) > 0)
-  int2 = which(rowSums(sapply(cols2, function(col) grepl("^interface", additional_aln_df[[col]]))) > 0)
-
-  interfaces = rbind(extended_aln_df[int1, , drop = FALSE],
-                     additional_aln_df[int2, , drop = FALSE])
-
-  if(length(int1) > 0) {
-    extended_aln_df = extended_aln_df[-c(int1),]
-  }
-
-  if(length(int2) > 0) {
-    additional_aln_df = additional_aln_df[-c(int2),]
-  }
-
-  # -- step 3 ~ extend previously un-mapped residues that now have codon mapping across pdbs ----
-
-  # which rows are potentially needed #
-  ready1 = which(!is.na(extended_aln_df$codon))
-  ready2 = which(!is.na(additional_aln_df$codon))
-
-  # Check for orphans
-  has_orphans1 = (nrow(extended_aln_df) > length(ready1))
-  has_orphans2 = (nrow(additional_aln_df) > length(ready2))
-
-  if(has_orphans1){
-
-    # WE WILL MERGE ORPHANS ACROSS PDBS USING THEIR CODON POSITION #
-    # THESE ADDITIONS NEED TO BE STORED TO LATER ADD TO extended_aln_df #
-    # SOME ORPHANS MAP TO DIFFERENT MSA SET -- in this case they should be saved for later #
-
-    # grab orphaned data
-    orphan_df = extended_aln_df[-ready1, ]
-    orphan_df$track_id = 1:nrow(orphan_df)  # add track_id to keep track of orphans
-    used_ids = c()
-
-    # look for residue id matches in proper pdb column -- save patch to that row #
-    codon_map = additional_aln_df[!is.na(additional_aln_df$codon), c("codon", "msa", cols2, 'msa_subset_id', 'patch_msa')]
-    codon_map$patch_msa = NA
-    filled_codon_map1 = codon_map[0,]
-
-    # for each column in cols 1 grab its codon_patch and see if we can find its residue in that column in codon map
-    msa_save1 = list()
-    for(msa_num in unique(orphan_df$msa)) {
-
-      # filter orphan_df for current msa_id
-      orphan_sub = orphan_df[orphan_df$msa == msa_num, ]
-
-      # store codon_map for current msa_num #
-      hold_codon_map = codon_map
-
-      # builds codon_map for current msa_num -- across pdbs #
-      # aka residue touched msa1 and now we want its msa2 codon #
-      for (col in cols1) {
-        if (!col %in% cols2) next # skip if col not in additional_aln_df #
-
-        # find residue_id in codon_map #
-        # i dont think != '-' is needed here? how can a gap have a patch
-        df = orphan_sub[!is.na(orphan_sub[[col]]) & orphan_sub[[col]] != '-', c(col, 'codon_patch', 'track_id')]
-        if (nrow(df) == 0){
-          next
-        }
-
-        # keep track of which will actually merge in #
-        will_merge = which(df[[col]] %in% hold_codon_map[[col]])
-        used_ids = c(used_ids, df$track_id[will_merge])
-        # drop track id
-        df$track_id = NULL
-
-        colnames(df)[2] = paste0(gsub('[_]*residue_id', '', col), '_codon_patch')
-
-        hold_codon_map = merge(hold_codon_map, df, by = col, all.x = TRUE)
-      }
-
-      # Keep rows where at least one codon_patch column has data
-      patches = grep('codon_patch', colnames(hold_codon_map), value = TRUE)
-      hold_codon_map = hold_codon_map[rowSums(sapply(patches, function(col) !is.na(hold_codon_map[[col]]))) > 0,]
-
-      # now for each row -- do union patch # ##NOTE IF EVER ADDING INTERSECT PATCH TO extend_pdb() -- we would want to do it here too #
-      hold_codon_map$codon_patch = NA
-      for(i in 1:nrow(hold_codon_map)) {
-        combine_patch = hold_codon_map[i, patches]
-        combine_patch = combine_patch[!is.na(combine_patch)]
-        combine_patch = paste(combine_patch, collapse = '+')
-        combine_patch = unique(unlist(strsplit(combine_patch, '\\+')))
-
-        # remove previous tags # - or do they need stored?
-        combine_patch = gsub('_[0-9]+$', '', combine_patch)
-
-        combine_patch = sort(as.numeric(combine_patch))
-
-        hold_codon_map$codon_patch[i] = paste0(combine_patch, collapse = '+')
-      }
-
-      # now we have final patches for all the orphans of df1
-      save_sub = .extract_msa_subsets(msa_info_set[[paste0('msa', msa_num)]]$msa_mat, hold_codon_map)
-      names(save_sub) = paste0(names(save_sub), '_pulling_msa', msa_num)
-
-      # save msas (grows across msas in extend_aln_df)
-      msa_save1 = c(msa_save1, save_sub)
-
-      # add hold_codon_map to filled_codon_map #
-      hold_codon_map$patch_msa = msa_num
-      filled_codon_map1 = rbind(filled_codon_map1, hold_codon_map[c('codon', 'msa', 'codon_patch', 'patch_msa', 'msa_subset_id')])
-
-    }
-
-    # which orphans were used and which are waiting for different msa? #
-    still_orphan1 = orphan_df[!orphan_df$track_id %in% used_ids,]
-    still_orphan1$track_id = NULL
-
-    # may want to keep all orphan data -- and signal if it was mapped or not #
-
-  }
-
-  if(has_orphans2){
-
-    orphan_df = additional_aln_df[-ready2, ]
-    orphan_df$track_id = 1:nrow(orphan_df)  # add track_id to keep track of orphans
-    used_ids = c()
-
-    # this is msa extension but we need to pair residue_id from df1 to their df2 residue and codon #
-    codon_map = extended_aln_df[!is.na(extended_aln_df$codon), c("codon", "msa", cols1, 'msa_subset_id', 'patch_msa')]  # msa 2 but we will use to find resi from msa1 df
-    codon_map$patch_msa = next_msa
-    #filled_codon_map2 = codon_map[0,] -- since all patch_msa source are msa_next - we can collect at the end #
-
-    # for each column in cols 1 grab its codon_patch and see if we can find its residue in that column in codon map
-    for(col in cols2){
-      if(!col %in% cols1) next
-
-      # find residue_id in codon_map #
-      df = orphan_df[!is.na(orphan_df[[col]]) & orphan_df[[col]] != '-', c(col, 'codon_patch', 'track_id')]
-      if(nrow(df) == 0) next
-
-      # keep track of which will actually merge in #
-      will_merge = which(df[[col]] %in% codon_map[[col]])
-      used_ids = c(used_ids, df$track_id[will_merge])
-      # drop track id
-      df$track_id = NULL
-
-      colnames(df)[2] = paste0(gsub('[_]*residue_id', '', col), '_codon_patch')
-
-      codon_map = merge(codon_map, df, by = col, all.x = TRUE)
-    }
-
-    # now we have codon_map1 with codon_patch and residue_id from df1 #
-
-    # Keep rows where at least one codon_patch column has data
-    patches = grep('codon_patch', colnames(codon_map), value = TRUE)
-    codon_map = codon_map[rowSums(sapply(patches, function(col) !is.na(codon_map[[col]]))) > 0,]
-
-    # now for each row -- do union patch # ##NOTE IF EVER ADDING INTERSECT PATCH TO extend_pdb() -- we would want to do it here too #
-    codon_map$codon_patch = NA
-    for(i in 1:nrow(codon_map)) {
-      combine_patch = codon_map[i, patches]
-      combine_patch = combine_patch[!is.na(combine_patch)]
-      combine_patch = paste(combine_patch, collapse = '+')
-      combine_patch = unique(unlist(strsplit(combine_patch, '\\+')))
-      combine_patch = sort(as.numeric(combine_patch))
-
-      combine_patch = gsub('_[0-9]+$', '', combine_patch)
-
-      codon_map$codon_patch[i] = paste0(combine_patch, collapse = '+')
-    }
-
-    # now go by msa_num in codon_map ~ to grab msa subsets #
-    msa_save2 = list()
-    for(msa_num in unique(codon_map$msa)){
-
-      codon_sub = codon_map[codon_map$msa == msa_num, ]
-
-      # now we have final patches for all the orphans of df1
-      # save as msaX_codon_X_msa1 and tack on too where?
-      save_sub = .extract_msa_subsets(msa_info_set[[paste0('msa', next_msa)]]$msa_mat, codon_sub)
-      names(save_sub) = paste0(names(save_sub), '_pulling_msa', next_msa)
-
-      msa_save2 = c(msa_save2, save_sub)
-    }
-
-    # which orphans were used and which are waiting for different msa? #
-    still_orphan2 = orphan_df[!orphan_df$track_id %in% used_ids,]
-    still_orphan2$track_id = NULL
-
-    # need codon_map for additional patch info #
-    filled_codon_map2 = codon_map[, c("codon", "msa", "codon_patch", "patch_msa", 'msa_subset_id')]
-  }
-
-  # -- step 4 ~ ready to rbind data frames and concatonate msa_subsets ----
-
-  # at this point all data is ready to merge #
-  # 1. extended_aln_df[ready1,] -- having codon X msa Y and its patch
-  #    -- msa subsets are in aln_info_set1$msa_subsets (msaY_codonX)
-  # 2. additional_aln_df[ready2,] -- having codox X msa Z and its patch
-  #    -- msa subsets are in aln_info_set2$msa_subsets (msaZ_codonX)
-  # 3. filled_codon_map1 -- having pdb residues that touch msa Y but come from msa Z
-  #    -- msa subsets are in msa_save1
-  # 4. filled_codon_map2 -- having pdb residues that touch msa Z but come from msa Y (Y can be multiple msa)
-  #    -- msa subsets are in msa_save2
-  # 5. still_orphan1 -- pdb residues that touch Y but have not found their home msa
-  # 6. still_orphan2 -- pdb residues that touch Z but have not found their home msa
-
-  # so 1 and 4 will go together (focal residue is codonX msaY)
-  # and 2 and 3 will go together (focal residue is codonX msaZ)
-
-  # update patch for these top 4 datasets -- their patch to msa pull is done #
-  add_msa_tag = function(patch, tag){
-    if(is.na(patch)) return(NA)
-    if(grepl('_', patch)) return(patch)  # already has msa tag
-    patch = strsplit(patch, '\\+')[[1]]
-    patch = paste0(patch, '_', tag)
-    patch = paste(patch, collapse = '+')
-    return(patch)
-  }
-
-  clean1 = extended_aln_df[ready1,]
-  clean1$codon_patch = mapply(add_msa_tag, clean1$codon_patch, clean1$patch_msa, USE.NAMES = FALSE)
-
-  clean2 = additional_aln_df[ready2,]
-  clean2$codon_patch = mapply(add_msa_tag, clean2$codon_patch, clean2$patch_msa, USE.NAMES = FALSE)
-
-  filled_codon_map1$codon_patch = mapply(add_msa_tag, filled_codon_map1$codon_patch, filled_codon_map1$patch_msa, USE.NAMES = FALSE)
-  filled_codon_map2$codon_patch = mapply(add_msa_tag, filled_codon_map2$codon_patch, filled_codon_map2$patch_msa, USE.NAMES = FALSE)
-
-  interfaces$codon_patch = mapply(add_msa_tag, interfaces$codon_patch, interfaces$patch_msa, USE.NAMES = FALSE)
-
-  # 7/6/25 -- update to handle gap mapped residues -- #
-  # filled codon map has '-' residues but there is no extension needed #
-  # thats not correct '-' can be orphan residue too #
-  # in this case lets keep residue id #
-
-  # clean1 and clean2 have full codon to msa maps #
-  # add codon_patch from filled2 to clean1
-  for(i in 1:nrow(filled_codon_map2)) {
-    codon = filled_codon_map2$codon[i]
-    msa = filled_codon_map2$msa[i]
-    patch = filled_codon_map2$codon_patch[i]
-    patch_msa = filled_codon_map2$patch_msa[i]
-
-    # find codon in clean1 and join this data #
-    idx = which(clean1$codon == codon & clean1$msa == msa)
-    if(length(idx) > 0) {
-      clean1$codon_patch[idx] = paste(clean1$codon_patch[idx], patch, sep = '+')
-    }
-
-    # pdbs can also be concatonated #
-    msa1 = aln_info_set1$msa_subsets[[paste0('msa', msa, '_codon_', codon)]]
-    msa2 = msa_save2[[paste0('msa', msa, '_codon_', codon, '_pulling_msa', patch_msa)]]
-
-    # if use_names_true -- then we concate on common name #
-    # other wise just concatenate the two #
-    if(use_sample_names) {
-      names1 = rownames(msa1)
-      names2 = rownames(msa2)
-      reorder_msa2 = match(names1, names2)
-
-      # see if any data is dropped #
-      valid_match = !is.na(reorder_msa2)
-      names1_valid = names1[valid_match]
-      reorder_msa2_valid = reorder_msa2[valid_match]
-
-      # print (later store) -- if any data is dropped #
-      if(length(valid_match) != length(names1)){
-        print('Warning: some data is dropped when merging msa subsets:')
-        print('use_sample_names = TRUE ... so msa\'s are matched by fasta headers')
-        print('this ensures valid msa subsetting for sequence based statistics')
-        print('it could be turned off for single site stats like entropy -- but')
-        print('you risk pulling gene information from entirely different genomic samples')
-        print(paste0('dropped ', length(names1) - length(names1_valid), ' sequences'))
-        print(paste0('for msa subset built on ', paste0('msa', msa, '_codon_', codon) ))
-      }
-
-      msa1 = msa1[names1_valid,]
-      msa2 = msa2[reorder_msa2_valid,]
-
-      # now we can merge the two #
-      merged_msa = cbind(msa1, msa2)
-
-      # overwrite the msa subset in aln_info_set1 #
-      aln_info_set1$msa_subsets[[paste0('msa', msa, '_codon_', codon)]] = merged_msa
+    if (is.na(max_patch)) {
+      codon_df = .variable_size_merge(codon_df = codon_df,
+                                     residue_df = residue_df,
+                                     merge_type = merge_type,
+                                     only_exposed_in_patch = only_exposed_in_patch)
     } else {
-      # just combine all available rows #
-      min_ro = min(nrow(msa1), nrow(msa2))
-      merged_msa = cbind(msa1[1:min_ro,], msa2[1:min_ro,])
-      aln_info_set1$msa_subsets[[paste0('msa', msa, '_codon_', codon)]] = merged_msa
+
+      codon_df = .fixed_size_merge(codon_df = codon_df,
+                                  residue_df = residue_df,
+                                  patch_mode = patch_mode,
+                                  dist_cutoff = dist_cutoff,
+                                  merge_type = merge_type,
+                                  max_patch = max_patch,
+                                  pdb_info_sets = pdb_info_sets,
+                                  only_exposed_in_patch = only_exposed_in_patch)
     }
 
   }
 
-  # add codon_patch from filled1 to clean2 #should be seq_len()
-  for(i in 1:nrow(filled_codon_map1)) {
-    codon = filled_codon_map1$codon[i]
-    msa = filled_codon_map1$msa[i]
-    patch = filled_codon_map1$codon_patch[i]
-    patch_msa = filled_codon_map1$patch_msa[i]
+  # Step 4 - update msa_subset_id ----
+  codon_df$msa_subset_id = codon_df$codon_id
+  codon_df$msa_subset_id[is.na(codon_df$codon_patch)] = NA
 
-    # find codon in clean1 and join this data #
-    idx = which(clean2$codon == codon & clean2$msa == msa)
-    if(length(idx) > 0) {
-      clean2$codon_patch[idx] = paste(clean2$codon_patch[idx], patch, sep = '+')
+  # STEP 5 handle interfaces ----
+  # handle interfaces  -- skipped by above codon based merges #
+  # only if exposure_distance and merge_surface_exposure and only_exposed_in_patch
+  if(nrow(interf_df) && merge_type == 'exposure_distance' && merge_interface_surface && only_exposed_in_patch){
+
+    exp = codon_df$codon_id[codon_df$exposed]
+    exp = exp[!is.na(exp)]
+
+    for(i in seq_len(nrow(interf_df))){
+      if(is.na(interf_df$codon_patch[i])) next
+      p = strsplit(interf_df$codon_patch[i], '\\+')[[1]]
+      p = p[p %in% exp]
+      interf_df$codon_patch[i] = paste0(p, collapse = '+')
+    }
+  }
+
+  if(nrow(interf_df)){
+    # reformat interf_df to match codon_df
+    for(i in seq_len(nrow(interf_df))){
+      # add new row to codon_df
+      newro = nrow(codon_df)+1
+      codon_df[newro,] = NA
+
+      codon_df$codon_patch[newro] = interf_df$codon_patch[i]
+
+      pdbid = interf_df$pdb[i]
+      codon_df$msa_subset_id[newro] = paste0(interf_df$residue_id[i], '_', pdbid)
+      pdbid = paste0(pdbid, '_residue_id')
+      codon_df[newro, pdbid] = interf_df$residue_id[i]
+
+
     }
 
-    # pdbs can also be concatonated #
-    msa1 = aln_info_set2$msa_subsets[[paste0('msa', msa, '_codon_', codon)]]
-    msa2 = msa_save1[[paste0('msa', msa, '_codon_', codon, '_pulling_msa', patch_msa)]]
-
-    # if use_names_true -- then we concate on common name #
-    # other wise just concatenate the two #
-    if(use_sample_names) {
-      names1 = rownames(msa1)
-      names2 = rownames(msa2)
-      reorder_msa2 = match(names1, names2)
-
-      # see if any data is dropped #
-      valid_match = !is.na(reorder_msa2)
-      names1_valid = names1[valid_match]
-      reorder_msa2_valid = reorder_msa2[valid_match]
-
-      # print (later store) -- if any data is dropped #
-      if(length(valid_match) != length(names1)){
-        print('Warning: some data is dropped when merging msa subsets:')
-        print('use_sample_names = TRUE ... so msa\'s are matched by fasta headers')
-        print('this ensures valid msa subsetting for sequence based statistics')
-        print('it could be turned off for single site stats like entropy -- but')
-        print('you risk pulling gene information from entirely different genomic samples')
-        print(paste0('dropped ', length(names1) - length(names1_valid), ' sequences'))
-        print(paste0('for msa subset built on ', paste0('msa', msa, '_codon_', codon) ))
-      }
-
-      msa1 = msa1[names1_valid,]
-      msa2 = msa2[reorder_msa2_valid,]
-
-      # now we can merge the two #
-      merged_msa = cbind(msa1, msa2)
-
-      # overwrite the msa subset in aln_info_set1 #
-      aln_info_set2$msa_subsets[[paste0('msa', msa, '_codon_', codon)]] = merged_msa
-    } else {
-      # just combine all available rows #
-      min_ro = min(nrow(msa1), nrow(msa2))
-      merged_msa = cbind(msa1[1:min_ro,], msa2[1:min_ro,])
-      aln_info_set2$msa_subsets[[paste0('msa', msa, '_codon_', codon)]] = merged_msa
-    }
 
   }
 
-  # -- step 5 ~ merge interfaces -- check names too  ----
-  unique_interface_ids = unique(interfaces$msa_subset_id)
+  # update codon_len, unique_codon
+  codon_df$codon_len[is.na(codon_df$codon_patch)] = NA
+  codon_df$unique_codon[is.na(codon_df$codon_patch)] = NA
 
-  # Handle common interfaces between the two msa_subset lists
-  names1 = names(aln_info_set1$msa_subsets)
-  names2 = names(aln_info_set2$msa_subsets)
+  for(i in seq_len(nrow(codon_df))){
+    if(is.na(codon_df$codon_patch[i])) next
 
-  # Find interfaces that exist in both
-  common_interfaces = intersect(names1[grep('^interface_', names1)],
-                                names2[grep('^interface_', names2)])
+    # load patch split and count #
+    p = strsplit(codon_df$codon_patch[i], '\\+')[[1]]
+    codon_df$codon_len[i] = length(p)
+    codon_df$unique_codon[i] = length(unique(p))
 
-  # Combine MSA subsets for common interfaces
-  for(interface_name in common_interfaces) {
-    msa1 = aln_info_set1$msa_subsets[[interface_name]]
-    msa2 = aln_info_set2$msa_subsets[[interface_name]]
-
-    if(use_sample_names) {
-      names1 = rownames(msa1)
-      names2 = rownames(msa2)
-      reorder_msa2 = match(names1, names2)
-
-      valid_match = !is.na(reorder_msa2)
-      names1_valid = names1[valid_match]
-      reorder_msa2_valid = reorder_msa2[valid_match]
-
-      if(length(valid_match) != length(names1)){
-        print(paste0('Warning: dropped ', length(names1) - length(names1_valid), ' sequences for interface ', interface_name))
-      }
-
-      msa1 = msa1[names1_valid,]
-      msa2 = msa2[reorder_msa2_valid,]
-
-      combined_msa = cbind(msa1, msa2)
-    } else {
-      min_rows = min(nrow(msa1), nrow(msa2))
-      combined_msa = cbind(msa1[1:min_rows,], msa2[1:min_rows,])
-    }
-
-    # Store combined version
-    aln_info_set1$msa_subsets[[interface_name]] = combined_msa
   }
 
-  # Collapse duplicate interfaces by msa_subset_id
-  if(nrow(interfaces) > 0) {
-
-    # Group by msa_subset_id and collapse
-    unique_interface_ids = unique(interfaces$msa_subset_id)
-    collapsed_interfaces = data.frame()
-
-    for(interface_id in unique_interface_ids) {
-      interface_rows = interfaces[interfaces$msa_subset_id == interface_id, ]
-
-      if(nrow(interface_rows) == 1) {
-        # Single row, just add it
-        collapsed_row = interface_rows
-      } else {
-        # Multiple rows, combine patches
-        collapsed_row = interface_rows[1, ]  # take first row as template
-
-        # Combine all codon_patches
-        all_patches = interface_rows$codon_patch
-        all_patches = all_patches[!is.na(all_patches)]
-        if(length(all_patches)>0){
-          combined_patch = paste(all_patches, collapse = '+')
-        } else {
-          combined_patch = NA
-        }
-        collapsed_row$codon_patch = combined_patch
-      }
-
-      # Set msa and patch_msa to NA for interfaces
-      collapsed_row$msa = NA
-      collapsed_row$patch_msa = NA
-
-      collapsed_interfaces = rbind(collapsed_interfaces, collapsed_row)
-    }
-
-    # Replace interfaces with collapsed version
-    interfaces = collapsed_interfaces
-  }
-
-  # not all columns are present so use set_diff #
-  all_cols = unique(c(colnames(clean1),
-                      colnames(clean2),
-                      colnames(interfaces),
-                      colnames(still_orphan1),
-                      colnames(still_orphan2)))
-
-  # Add missing columns to each dataframe
-  # if interfaces, still orphan1 or still orphan2
-
-  if(nrow(still_orphan1) > 0) {
-    still_orphan1[setdiff(all_cols, colnames(still_orphan1))] = NA
-  } else{
-    still_orphan1 = data.frame(matrix(NA, nrow = 0, ncol = length(all_cols)))
-    colnames(still_orphan1) = all_cols
-  }
-
-  if(nrow(still_orphan2) > 0) {
-    still_orphan2[setdiff(all_cols, colnames(still_orphan2))] = NA
-  } else{
-    still_orphan2 = data.frame(matrix(NA, nrow = 0, ncol = length(all_cols)))
-    colnames(still_orphan2) = all_cols
-  }
-
-  if(nrow(interfaces) > 0) {
-    interfaces[setdiff(all_cols, colnames(interfaces))] = NA
-  } else{
-    interfaces = data.frame(matrix(NA, nrow = 0, ncol = length(all_cols)))
-    colnames(interfaces) = all_cols
-  }
-
-  if(nrow(clean1) > 0) {
-    clean1[setdiff(all_cols, colnames(clean1))] = NA
-  } else{
-    clean1 = data.frame(matrix(NA, nrow = 0, ncol = length(all_cols)))
-    colnames(clean1) = all_cols
-  }
-
-  if(nrow(clean2) > 0) {
-    clean2[setdiff(all_cols, colnames(clean2))] = NA
-  } else{
-    clean2 = data.frame(matrix(NA, nrow = 0, ncol = length(all_cols)))
-    colnames(clean2) = all_cols
-  }
-
-  #clean1[setdiff(all_cols, colnames(clean1))] = NA
-  #clean2[setdiff(all_cols, colnames(clean2))] = NA
-  #interfaces[setdiff(all_cols, colnames(interfaces))] = NA
-  #still_orphan1[setdiff(all_cols, colnames(still_orphan1))] = NA
-  #still_orphan2[setdiff(all_cols, colnames(still_orphan2))] = NA
-
-  # rbind all dataframes together #
-  full_set = rbind(clean1, clean2, interfaces, still_orphan1, still_orphan2)
-
-  # skip for now due to gaps #
-  #full_set = full_set[order(as.numeric(full_set$msa), as.numeric(full_set$codon)),]
-
-  # reorder columns - include msa_subset_id #
-  pdb_residue_cols = grep('pdb[0-9]+_residue', colnames(full_set), value = TRUE)
-  pdb_aa_cols = grep('pdb[0-9]+_aa', colnames(full_set), value = TRUE)
-
-  col_order = c('msa', 'codon', 'ref_aa', 'msa_subset_id',
-                pdb_residue_cols, pdb_aa_cols,
-                'codon_patch', 'patch_msa')
-
-  col_order = c(col_order, setdiff(colnames(full_set), col_order))
-  full_set = full_set[, col_order]
-
-  # copy over msa sets #
-  full_msa = aln_info_set1$msa_subsets
-  full_msa = c(full_msa, aln_info_set2$msa_subsets)
-
-  full_msa = full_msa[!grepl('^residue', names(full_msa))]  # remove residue msa's #
-
-  # any interfaces (NA missed) #
-
-  #
-
-  return(
-    list(
-      msa_subsets = full_msa,
-      aln_df = full_set
-    )
-  )
-
+  return(codon_df)
 }
 
-# for debug
-if(F){
-  aln_info_set1 = extended_result
-  aln_info_set2 = working_aln_sets[[2]]
-  msa_info_set = msa_info_sets[c(msa_set)]
-  use_sample_names = TRUE
-}
 
-if(F){
-  hi = extended_aln_df
-  hi2 = additional_aln_df
 
-  # -------------- #
-  a = hi[grep('^229_A_', hi$residue_id), ]
-  b = hi2[grep('^594_E_', hi2$residue_id), ]
-  a
-  b
 
-  # -------------- #
-  fs = full_set
-  a = fs[grep('^229_A_', fs$residue_id), ]
-  a
-  b = fs[grep('^594_E_', fs$residue_id), ]
-  b
 
-  # ------------- #
-  c = clean1[grep('^229_A_', clean1$residue_id), ]
-  c
-
-  # ------------- #
-  d = filled_codon_map1[grep('^229_A_', filled_codon_map1$residue_id), ]
-  d
-
-  e = filled_codon_map2[grep('^229_A_', filled_codon_map2$residue_id), ]
-  e
-}

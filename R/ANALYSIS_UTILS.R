@@ -61,6 +61,21 @@ write_patch_fastas <- function(msa_subsets, output_dir = "patch_fastas") {
 }
 
 
+# block entropy ----
+#block_entropy = function(x){
+  # take a sweet of haplotypes (msa_subsets) #
+  # compute a table of frequencies #
+  # compute entropy #
+
+  # drop sequences with non-nuc characters (X, ambigous, gaps) #
+
+#  tab = table(x)
+#  p = tab / sum(tab)
+#  entropy = -sum(p * log(p))
+#  return(entropy)
+#}
+
+
 
 
 
@@ -330,7 +345,7 @@ run_pegas_three = function(msa, residue_df = NULL, stat = c('pi', 'tajima', 'hap
 #'   \item{site_entropy}{Shannon entropy of amino acid distribution at the codon site.}
 #' }
 #' @export
-calculate_polymorphic_residue = function(msa_info_sets, residue_df, valid_aa_only = TRUE){
+calculate_polymorphic_residue_old = function(msa_info_sets, residue_df, valid_aa_only = TRUE){
 
   aa_vector = strsplit('AVILMWYFSTNQCGPRHKDE', '')[[1]]
 
@@ -385,8 +400,7 @@ calculate_polymorphic_residue = function(msa_info_sets, residue_df, valid_aa_onl
     msa_ids = unique(residue_df$msa)
     msa_ids = msa_ids[!is.na(msa_ids)]
     for(id in msa_ids){
-      msa_name = paste0('msa', id)
-      msa = msa_info_sets[[msa_name]]$msa_mat
+      msa = msa_info_sets[[id]]$msa_mat
 
       # handle residue_df null later #
       aa_set = t(apply(msa, 1, seqinr::translate))
@@ -436,6 +450,70 @@ calculate_polymorphic_residue = function(msa_info_sets, residue_df, valid_aa_onl
   )
 }
 
+
+calculate_polymorphic_residue = function(msa_info_sets, residue_df, valid_aa_only = TRUE){
+
+  aa_vector = strsplit('AVILMWYFSTNQCGPRHKDE', '')[[1]]
+
+  ids = unique(residue_df$msa)
+  ids = ids[!is.na(ids)]
+
+  # it is extneded data in which we need to cycle through msas #
+  residue_df$polymorphic = NA
+  residue_df$site_entropy = NA
+
+  for(id in ids){
+    msa = msa_info_sets[[id]]$msa_mat
+
+    # handle residue_df null later #
+    aa_set = t(apply(msa, 1, seqinr::translate))
+
+    x = apply(aa_set, 2, table)
+
+    # Check polymorphism for each codon position
+    polymorphic = sapply(x, function(pos_table) {
+      if(valid_aa_only) {
+        valid_counts = pos_table[names(pos_table) %in% aa_vector]
+        length(valid_counts[valid_counts > 0]) > 1
+      } else {
+        length(pos_table[pos_table > 0]) > 1
+      }
+    })
+
+    # Calculate Shannon entropy for each position
+    entropy = sapply(x, function(pos_table) {
+      if(valid_aa_only) {
+        valid_counts = pos_table[names(pos_table) %in% aa_vector]
+        valid_counts = valid_counts[valid_counts > 0]
+      } else {
+        valid_counts = pos_table[pos_table > 0]
+      }
+
+      if(length(valid_counts) == 0) return(0)
+
+      freqs = valid_counts / sum(valid_counts)
+      -sum(freqs * log2(freqs))
+    })
+
+    # add to residue_df -- only where there are codons #
+
+    # better way -- use codon_id #
+    res = data.frame(codon_id = paste0(1:length(polymorphic), '_', id),
+                     polymorphic = as.integer(polymorphic),
+                     site_entropy = entropy
+                     )
+
+
+    # build lookups
+    poly_lookup   <- setNames(res$polymorphic, res$codon_id)
+    entropy_lookup <- setNames(res$site_entropy, res$codon_id)
+
+    # assign by matching codon_id
+    residue_df$polymorphic <- poly_lookup[residue_df$codon_id]
+    residue_df$site_entropy <- entropy_lookup[residue_df$codon_id]
+
+  }
+}
 # calculate_patch_entropy() ----
 
 #' Calculate Mean Amino Acid Entropy per Patch

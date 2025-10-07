@@ -13,38 +13,41 @@
       force_seq_type = NULL, # ** can be protein or nucleic acid -- NULL means to autodetect
       detect_sequence_threshold = 0.8,
       detect_sequence_len = 100,
-      genetic_code = 1, # ** seqinr can use different genebank codes
-      reading_frame = 0, # ** seqinr can use different reading frames
-      reading_sens = 'F'
+      genetic_code = 1 # ** seqinr can use different genebank codes
     ),
 
     default_pdb_controls = list(
-      distance_method = 'ca',  # ** ca atom - can be side chain, backbone, ca, all
-      drop_incomplete_residue = T, # ** for dssp style sasa -- drop incomplete residues
+      distance_method = 'ca',  # ** ca atom - can be side chain, backbone, ca, all, centroid
+      drop_incomplete_residue = TRUE, # ** for dssp style sasa -- drop incomplete residues
       rsa_method = 'rose',         # ** sasa to rsa
-      patch_dist_cutoff = 15,      # ** defualt angstrom
-      patch_rsa_cutoff = 0.1,      # for surface def
-      patch_sasa_cutoff = NULL,    # if using sasa instead of rsa cuts
-      patch_exposed_only = TRUE,      # seed is exposed but patch can be also buried
-      max_patch = NULL,            # max aa in patch
+      dist_cutoff = 15,      # **  angstrom distance
+      rsa_cutoff = 0.1,      # for surface def
+      sasa_cutoff = NA,    # if using sasa
+      use_rsa_sasa = 'or',         # if both provided how to use
+      only_exposed_in_patch = TRUE,      # seed is exposed but patch can be also buried
+      max_patch = NA,            # max aa in patch
       interface_dist_cutoff = 5,    # interface dist cut --
-      force_file_type = NULL # can be pdb or cif
+      force_file_type = NULL, # can be pdb or cif
+      patch_mode = 'codon'  # will codons be duplicated and count as residues or should codons define windows -- used in rebuild_patches()
     ),
 
     default_aln_controls = list(
       use_sample_names = TRUE,     # actually used in in extend_msa() - stored here
-      auto_chain_threshold = 0.4,   # also used before aln module but conceptually fits
-      kmer_size = 4                # kmer size for auto chain mapping
+      auto_chain_threshold = 0.2,   # also used before aln module but conceptually fits
+      kmer_size = 4,              # kmer size for auto chain mapping
+      #next_chain_tolerance = 0.8, # used with autochain to keep good chain matches
+      merge_type = 'exposure_distance',    # change this to union / by_distance / by_exposure_distance
+      merge_exposure = 0.5       # how often does a residue need exposure to count as exposed in codon collapse
     ),
 
     default_stat_controls = list(
       calc_pi = FALSE,
       calc_tajima = FALSE,
-      calc_hap = TRUE,
+      calc_hap = FALSE,
       calc_polymorphic = TRUE,
       calc_patch_entropy = FALSE,
       calc_site_entropy = FALSE, # needs flag
-      valid_aa_only = FALSE # removes non-standard amino acids from stats (entropy and polymorphic)
+      valid_aa_only = TRUE # removes non-standard amino acids from stats (entropy and polymorphic)
     ),
 
     default_output_controls = list(
@@ -427,61 +430,18 @@ show_evo3d_defaults = function(module_name = NULL){
   list(path = tagged_path, tag = tag)
 }
 
-# run_evo3D ----
-
-#' Run evo3D Workflow
-#'
-#' Full evo3D wrapper to align MSA(s) and PDB(s), generate 3D-defined patches, codon mappings, and selection statistics.
-#' Handles homomultimers and multi-model structures automatically.
-#'
-#' @param msa A matrix, file path, or list of MSAs (character matrices, fasta objects, or file paths).
-#' @param pdb A \code{bio3d} PDB object or list of such objects.
-#' @param chain Chain ID(s) to analyze. Can be "auto", a character, vector, or nested list.
-#' @param interface_chain Chain(s) to include in interface-based patching (optional).
-#' @param occlusion_chain Chain(s) to include in occlusion masking for RSA (optional).
-#' @param compute_stats Logical; whether to calculate nucleotide diversity, Tajima’s D, etc. (default: \code{TRUE}).
-#' @param detail_level Controls the level of detail in the returned R object.
-#'
-#' \describe{
-#'   \item{0}{Return only `evo3d_df` and `pdb_info_sets`. Minimal memory usage. Suitable for post hoc visualization and writing to PDB files, but not for restart or stat recomputation.}
-#'   \item{1}{Adds `msa_info_sets`, enabling restart with user-provided alignments. Does not include full alignment-to-structure mappings or subsets.}
-#'   \item{2}{Adds full `msa_subsets` and MSA-to-PDB patch mappings, allowing for patch-level stat recomputation or post hoc reruns on individual structures.}
-#' }
-#'
-#' @param verbose Controls the verbosity of printed output.
-#'
-#' \describe{
-#'   \item{0}{Silent mode. Only errors or critical messages are printed.}
-#'   \item{1}{Basic progress updates showing which module is running.}
-#'   \item{2}{Detailed output, including all submodular steps.}
-#'  }
-#'
-#' @param restart_run A previous evo3d run object used to restart the pipeline (e.g., after alignment failure or to reuse mapped PDB metadata).
-#' @param user_aln A user-provided MSA aligned to the reference sequence. Can be a single alignment or a list (for multi-run pipelines). Used in conjunction with \code{restart_run}.
-#' @param msa_controls List of control parameters for MSA preprocessing (e.g. \code{ref_method}, \code{force_seq_type}).
-#' @param pdb_controls List of control parameters for patch definition (e.g. \code{patch_dist_cutoff}, \code{rsa_method}).
-#' @param aln_controls List of control parameters for MSA–structure alignment (if applicable).
-#' @param stat_controls List of control parameters for patch-level statistic calculations (e.g. \code{calc_pi}, \code{calc_tajima}).
-#' @param output_controls List of control parameters for output formatting (e.g. \code{output_format}, \code{output_dir}).
-#'
-#' @return A list containing:
-#' \item{evo3d_df}{Final data frame with codon-level mappings and statistics.}
-#' \item{final_msa_subsets}{Patch-level MSAs used in downstream statistics.}
-#' \item{msa_info_sets}{Reference and peptide information for each input MSA.}
-#' \item{pdb_info_sets}{Structure and patch data for each input PDB.}
-#' \item{aln_info_sets}{Codon-level alignment mappings from MSA to PDB.}
-#' \item{call_info}{Cached input metadata and control parameters.}
-#' @export
-run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_chain = NA,
-                     compute_stats = TRUE, detail_level = 1, verbose = 1,
-                     restart_run = NULL, user_aln = NULL,
+# new run_evo3d() fixed size patches----
+run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_chain = NA,    # how to handle pdb info #
+                     analysis_mode = 'codon', calculate_stats = TRUE, detail_level = 1, verbose = 1, # how to handle analysis
+                     restart_run = NULL, user_aln = NULL, # these need work -- how to restart a run?? # -- ... what does user need to give?
                      msa_controls = list(), pdb_controls = list(), aln_controls = list(),
-                     stat_controls = list(), output_controls = list()){
+                     stat_controls = list(), output_controls = list()){ # 5 control lists -- msa, pdb (patches), aln_controls -- how to merge, autochain thresh, stats, outputs
+
 
   # COULD ADD 1 more step -- validating input types (quick - is detail and verbose here ...) #
   # 6/26/25 need to add #
 
-  #0 SETUP MODULE BEHAVIOR AND BUILD RUN INFO FROM USER INPUTS ----
+  #STEP 0 -- SETUP MODULE BEHAVIOR AND BUILD RUN INFO FROM USER INPUTS ----
   if(verbose > 0){
     cat('STEP 0: Setting up run information and controls...\n')
     if(verbose > 1){
@@ -517,22 +477,34 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   interface_chain = run_info$interface_chain
   occlusion_chain = run_info$occlusion_chain
 
-  #1 MODULE 1 msa_to_ref() ----
+  #STEP 0.5 -- quick stops to confine param space ----
+  if(is.na(pdb_controls$dist_cutoff) && is.na(pdb_controls$max_patch)){
+    message('STOPPING!! In pdb_controls: Must provide either a distance cutoff (dist_cutoff) or fixed size (max_patch) for 3D window defintion')
+    return(NULL)
+  }
+
+
+  #STEP 1 MODULE 1 msa_to_ref() ----
   if(verbose > 0){
     cat('STEP 1: Converting MSAs to reference peptide sequences...\n')
   }
 
+  # read MSA and convert to reference sequence for aligning to PDB #
   msa_info_sets = list()
   for(msa_name in names(run_info$msa)) {
-    call_args = list(msa = run_info$msa[[msa_name]],
-                     verbose = verbose - 1)
+
+    call_args = list(
+      msa = run_info$msa[[msa_name]],
+      verbose = verbose - 1)
+
     msa_info_sets[[msa_name]] = do.call(msa_to_ref, c(call_args, msa_controls))
   }
 
-  #1.5 CACHING PDBS AND FILLING IN 'auto' CHAINS ----
+  #STEP 2 -- Caching PDBS, auto-detecting chains  ----
+
+  # find matching chains -- for 'auto' rows #
   auto_ros = which(run_grid$chain == 'auto')
   run_grid$kmer_match = NA
-  pdb_cache = list()
 
   if (verbose > 0) {
     if (length(auto_ros) > 0) {
@@ -543,17 +515,18 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   }
 
   # cache pdbs #
+  pdb_cache = list()
   for(pdb_name in names(run_info$pdb)) {
     pdb_cache[[pdb_name]] = .standardize_pdb_input(pdb = run_info$pdb[[pdb_name]])
   }
 
-  # auto chain for all #
-  for (i in seq_len(nrow(run_grid))) {
-    # get pdb and msa names
+  # all msa-pdb pairs get some kmer threshold #
+  run_grid_ro = nrow(run_grid)
+  for (i in seq_len(run_grid_ro)) {
     pdb_name = run_grid$pdb[i]
     msa_name = run_grid$msa[i]
 
-    # Run auto detect #
+    # Run auto detect
     chain_mappings = .auto_detect_chain(
       pep = msa_info_sets[[msa_name]]$pep,
       pdb = pdb_cache[[pdb_name]],
@@ -561,41 +534,60 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
       k = kmer_size
     )
 
-    # if in auto -- try to pass autochain threshold #
-    if(i %in% auto_ros){
-      # check for passing auto_chain_threshold #
-      if(!any(chain_mappings >= auto_chain_threshold)) {
+    # if in auto -- try to pass autochain threshold
+    if (i %in% auto_ros) {
+      passing = chain_mappings[chain_mappings > auto_chain_threshold]
+
+      if (length(passing) == 0) {
         if (verbose > 0) {
-          message(sprintf("In auto chain mapping: No chains in '%s' passed the k-mer threshold for '%s' (%.2f).\n",
-                          pdb_name, msa_name, auto_chain_threshold))
+          message(sprintf(
+            "In auto chain mapping: No chains in '%s' passed the k-mer threshold (%.2f) for '%s'.\n",
+            pdb_name, auto_chain_threshold, msa_name
+          ))
         }
+        # mark as NA to show this msa pdb pairing had no matches
         run_grid$chain[i] = NA
         next
       }
 
-      # get best chain based on kmer similarity #
-      run_grid$chain[i] = names(chain_mappings)[1]
+      # add all passing chains as *new rows* at the bottom
+      new_rows = data.frame(
+        msa = msa_name,
+        pdb = pdb_name,
+        chain = names(passing),
+        kmer_match = round(as.numeric(passing), 3),
+        stringsAsFactors = FALSE
+      )
 
-      # add similarity scores #
-      run_grid$kmer_match[i] = round(chain_mappings[1], 2)
+      run_grid = rbind(run_grid, new_rows)
     }
+    if (!(i %in% auto_ros)) {
+      chain_choice = run_grid$chain[i]
 
-    # if not see if specified chain is valid #
-    if(run_grid$chain[i] %in% names(chain_mappings)){
-      # check for passing auto_chain_threshold #
-      if(!any(chain_mappings >= auto_chain_threshold)) {
-        if (verbose > 0) {
-          message(sprintf("In specified chain mapping: Chain '%s' in '%s' did not pass the k-mer threshold for '%s' (%.2f).\n",
-                          run_grid$chain[i], pdb_name, msa_name, auto_chain_threshold))
-        }
-        run_grid$chain[i] = NA
-        next
+      if (chain_choice %in% names(chain_mappings)) {
+        # always record score, even if it's below threshold
+        run_grid$kmer_match[i] = round(chain_mappings[chain_choice], 3)
+      } else {
+        stop(sprintf(
+          "Chain '%s' was specified for PDB '%s' but not found.
+       Please check your input or specify a valid chain.",
+          chain_choice, run_grid$pdb[i]
+        ))
       }
-
-      # add similarity scores #
-      run_grid$kmer_match[i] = round(chain_mappings[run_grid$chain[i]], 2)
     }
+
   }
+
+  # drop any remaining auto rows, but keep NA chains that replaced 'auto' #
+  run_grid = run_grid[is.na(run_grid$chain) | run_grid$chain != 'auto', , drop = FALSE]
+
+  # possible one pdb chain passed auto_threshold against two msa's #
+  run_grid = run_grid[order(run_grid$pdb, run_grid$msa, run_grid$chain), , drop = FALSE]
+  run_grid = run_grid[!duplicated(paste(run_grid$pdb, run_grid$chain)), , drop = FALSE]
+
+  # reorder on msa and pdb
+  run_grid = run_grid[order(run_grid$msa, run_grid$pdb), , drop = FALSE]
+  row.names(run_grid) = NULL
 
   if (verbose > 1) {
     cat("\tRun grid for rest of analysis:\n\n")
@@ -604,7 +596,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
     cat('\n')
   }
 
-  # !!! STOP RUN IF A PDB OR MSA DOESNT HAVE ANY MAPPINGS? !!! ----
+  #STEP 3 -- VALIDATE input set !!! STOP RUN IF A PDB OR MSA DOESNT HAVE ANY MAPPINGS? !!! ----
 
   # save call_info so it can be exported #
   call_info = list(
@@ -618,7 +610,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
     aln_controls = c(aln_controls,
                      use_sample_names = use_sample_names,
                      auto_chain_threshold = auto_chain_threshold,
-                     kmer_size = kmer_size), # pack back in previosly removed aln_controls #
+                     kmer_size = kmer_size), # pack back in previously removed aln_controls #
     stat_controls = stat_controls,
     output_controls = output_controls
   )
@@ -647,7 +639,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
     ))
   }
 
-  #2 MODULE 2 pdb_to_patch() ----
+  #STEP 4 MODULE 2 pdb_to_patch() ----
 
   if(verbose > 0) {
     cat('STEP 2: Converting PDBs to patches...\n')
@@ -656,7 +648,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   # GATHER CHAIN, INTERFACE, AND OCCLUSION FOR EACH PDB #
   pdb_info_sets = list()
   for (pdb_name in unique(run_grid$pdb)) {
-    # gather all relavant chains for this PDB #
+    # gather all relevant chains for this PDB #
     chain_set = run_grid$chain[run_grid$pdb == pdb_name]
 
     # remove NA and get unique chains #
@@ -677,182 +669,83 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
     pdb_info_sets[[pdb_name]] = do.call(pdb_to_patch, c(call_args, pdb_controls))
   }
 
-  # CLEAR CACHE reduce memory usage ----
+  # CLEAR CACHE reduce memory usage ---- #
 
-  # remove run_info and pdb_cache
+  # remove run_info and pdb_cache #
   rm(run_info, pdb_cache, call_args, chain_set, pdb_name, bad_pdbs, bad_msas, msa_valid, pdb_valid,
-     chain_mappings, auto_chain_threshold, i, auto_ros, msa_name, interface_chain, occlusion_chain,
-     msa_controls, pdb_controls)
+     chain_mappings, auto_chain_threshold, i, auto_ros, msa_name, interface_chain, occlusion_chain)
 
   invisible(gc())
 
-  #3 MODULE 3 aln_msa_to_pdb ----
+  #STEP 5 MODULE 3 aln_msa_to_pdb ----
   if (verbose > 0) {
     cat('STEP 3: Aligning MSAs to PDBs...\n')
   }
 
+  # now for each pdb -- resolve its residue windows into a codon window #
   aln_info_sets = list()
-  for(i in seq_len(nrow(run_grid))) {
+  pdb_names = unique(run_grid$pdb)
+  for(i in seq_len(length(pdb_names))) {
 
-    # IF CHAIN IS NA -- CREATE EMPTY ALN_INFO_SET #
-    # THIS ENSURES PDB1 in evo3d_df is pdb1 in run_info #
-    if(is.na(run_grid$chain[i])){
+    # gather all the msa's that this pdb touched
+    pdb_name = pdb_names[i]
+    sub_grid = run_grid[run_grid$pdb == pdb_name,]
 
-      # print skipping one row if verbose > 1
-      if(verbose > 1) {
-        cat(sprintf("\tSkipping run grid row %d: No MSA mapping for PDB\n", i))
-      }
-
-      # create empty alignment info set for this row #
-      df = data.frame(
-        residue_id = NA,
-        codon_patch = NA,
-        codon = NA,
-        pdb_aa = NA,
-        ref_aa = strsplit(msa_info_sets[[run_grid$msa[i]]]$pep, "")[[1]]
-      )
-
-      df$codon = 1:nrow(df)
-
-      empty_set = list(
-        msa_subsets = NA,
-        aln_df = df,
-        aln_coverage = NA
-      )
-
-      aln_name <- paste(run_grid$msa[i], run_grid$pdb[i], run_grid$chain[i], sep="_")
-      aln_info_sets[[aln_name]] = empty_set
-      next
-    }
+    msa_set = unique(sub_grid$msa)
 
     call_args = list(
-      msa_info = msa_info_sets[[run_grid$msa[i]]],
-      pdb_info = pdb_info_sets[[run_grid$pdb[i]]],
-      chain = run_grid$chain[i],
-      verbose = verbose - 1
+      msa_info = msa_info_sets[msa_set],
+      pdb_info = pdb_info_sets[pdb_name][[1]],
+      chain = NA,
+      subset_msa = FALSE,
+      verbose = verbose - 1,
+      run_grid = sub_grid,
+      drop_gap_map = TRUE,
+      fix_gap_map_and_dedup_codons = TRUE,
+      patch_mode = pdb_controls$patch_mode,
+      max_patch = pdb_controls$max_patch,
+      dist_cutoff = pdb_controls$dist_cutoff,
+      only_exposed_in_patch = pdb_controls$only_exposed_in_patch
     )
 
-    aln_name <- paste(run_grid$msa[i], run_grid$pdb[i], run_grid$chain[i], sep="_")
-    aln_info_sets[[aln_name]] = do.call(aln_msa_to_pdb, c(call_args, aln_controls))
+    # aln_controls needs reworked - should have codon vs residue for patch mode
+    aln_info_sets[[pdb_name]] = do.call(aln_msa_to_pdb, c(call_args, aln_controls))
   }
 
-  suppressWarnings(rm(aln_name, call_args, i))
+  # make residue df by rbinding all these aln_df's together #
+  # thus every residue in analysis has a patch and codon window #
 
-  #3.5 (msa and pdb patch extensions) ----
+  residue_df = do.call(rbind, lapply(aln_info_sets, function(x) x$aln_df))
+  # do i want to remove aln_df in aln_info_sets or leave for later inspection #
+  # leave because individual aln_df maybe collapsed to codon level #
 
-  # Work on a copy so original is preserved for inspection
-  working_aln_sets = aln_info_sets
-  working_run_grid = run_grid
+  # remove unneeded columns from residue_df #
+  residue_df$patch = NULL
+  residue_df$patch_len = NULL
 
-  # Check for homomultimers to extend #
-  msa_pdb_counts = table(paste(working_run_grid$msa, working_run_grid$pdb, sep="_"))
-  needs_homomultimer_extension = names(msa_pdb_counts)[msa_pdb_counts > 1]
 
-  # Extend homomultimers
-  for(multimer in needs_homomultimer_extension){
-    if (verbose > 0) {
-      cat('STEP 3.5: Extending homomultimers...\n')
-    }
-
-    # can do all at once -- then update run grid so pdb extend doesnt run on these #
-    rows_for_multimer = which(paste(working_run_grid$msa, working_run_grid$pdb, sep="_") == multimer)
-    msa_id = working_run_grid$msa[rows_for_multimer[1]]
-
-    extended_result = extend_pdb_homomultimer(working_aln_sets[rows_for_multimer],
-                                              msa_info_sets[[msa_id]])
-
-    # collapse these rows so extend_pdb doesnt try to run (paste chains back to one) #
-    chains = unique(working_run_grid$chain[rows_for_multimer])
-    chains = paste0(chains, collapse = "")
-    working_run_grid$chain[rows_for_multimer] = chains
-    working_run_grid = working_run_grid[-rows_for_multimer[-1], ]
-
-    # Replace first entry, remove others
-    working_aln_sets[[rows_for_multimer[1]]] = extended_result
-    working_aln_sets[rows_for_multimer[-1]] = NULL
+  #STEP 6 MODULE 4 collapse_to_codon()  ----
+  if(analysis_mode == 'codon'){
+    # collapse_to_codon()
+    # merge on distance or distance+exposure #
+    # can build variable or fixed-size patches #
+    residue_df = collapse_to_codon(residue_df = residue_df,
+                                    merge_type = aln_controls$merge_type,
+                                    merge_exposure = aln_controls$merge_exposure,
+                                    max_patch = pdb_controls$max_patch,
+                                    only_exposed_in_patch = pdb_controls$only_exposed_in_patch,
+                                    patch_mode = pdb_controls$patch_mode,
+                                    dist_cutoff = pdb_controls$dist_cutoff,
+                                    merge_interface_surface = TRUE, # need to place this
+                                    pdb_info_sets = pdb_info_sets
+                                    )
   }
 
-  suppressWarnings(rm(msa_pdb_counts, needs_homomultimer_extension, multimer, rows_for_multimer,
-                      msa_id, extended_result, chains))
+  #STEP 7 -- generate_msa_subsets (final_msa_subsets) # ----
 
-  # Handle patch extensions across PDBs
-  msa_counts = table(working_run_grid$msa)
-  needs_pdb_extension = names(msa_counts)[msa_counts > 1]
+  # generate set
+  final_msa_subsets = .extract_msa_subsets(msa_info_sets, residue_df)
 
-  for(msa_id in needs_pdb_extension) {
-
-    # 6/26/25 !! really need to propogate occlusions #
-    # think e1e2 complex for 1 pdb, but just e2 for the other #
-    # that e1 occlusion should be kept #
-    if (verbose > 0) {
-      cat('STEP 3.5: Extending complimentary PDB info...\n')
-    }
-
-    rows_for_msa = which(working_run_grid$msa == msa_id)
-
-    # Start with the first PDB's result
-    extended_result = working_aln_sets[[rows_for_msa[1]]]
-
-    # Iteratively extend with each additional PDB
-    for(i in 2:length(rows_for_msa)) {
-      extended_result = extend_pdb(extended_result,
-                                      working_aln_sets[[rows_for_msa[i]]],
-                                      msa_info_sets[[msa_id]])
-    }
-
-    # Replace first entry, remove others
-    working_aln_sets[[rows_for_msa[1]]] = extended_result
-    working_aln_sets[rows_for_msa[-1]] = NULL
-
-    # Update working_run_grid
-    working_run_grid$pdb[rows_for_msa[1]] = paste(working_run_grid$pdb[rows_for_msa], collapse = "+")
-    working_run_grid$chain[rows_for_msa[1]] = paste(working_run_grid$chain[rows_for_msa], collapse = "+")
-    working_run_grid = working_run_grid[-rows_for_msa[-1], ]
-  }
-
-  suppressWarnings(rm(msa_counts, needs_pdb_extension, msa_id, rows_for_msa, extended_result, i))
-
-  # Handle patch extensions across MSAs
-  pdb_counts = table(working_run_grid$pdb)
-  needs_msa_extension = names(pdb_counts)[pdb_counts > 1]
-
-  for(pdb_id in needs_msa_extension) {
-    if (verbose > 0) {
-      cat('STEP 3.5: Extending multi-chain info...\n')
-    }
-
-    rows_for_pdb = which(working_run_grid$pdb == pdb_id)
-
-    # Start with first, extend with rest
-    extended_result = working_aln_sets[[rows_for_pdb[1]]]
-    first_msa = working_run_grid$msa[rows_for_pdb[1]]
-
-    msa_set = c(first_msa)
-    for(i in 2:length(rows_for_pdb)) {
-      current_msa = working_run_grid$msa[rows_for_pdb[i]]
-      msa_set = c(msa_set, current_msa)
-      extended_result = extend_msa(extended_result, working_aln_sets[[rows_for_pdb[i]]],
-                                   msa_info_sets[c(msa_set)],
-                                   use_sample_names = use_sample_names
-                                   )
-    }
-
-
-    # remove patch_msa column #
-    extended_result$aln_df$patch_msa = NULL
-
-    # Replace first, remove others
-    working_aln_sets[[rows_for_pdb[1]]] = extended_result
-    working_aln_sets[rows_for_pdb[-1]] = NULL
-    working_run_grid = working_run_grid[-rows_for_pdb[-1], ]
-
-  }
-
-  # Final result is working_aln_sets[[1]] (should be only one left)
-  final_result = working_aln_sets[[1]]
-
-  suppressWarnings(rm(pdb_counts, needs_msa_extension, pdb_id, rows_for_pdb, first_msa,
-                      extended_result, i, msa_set, current_msa, working_aln_sets))
 
   # CLEAN UP INTERMEDIATES TO DESIRED LEVEL ----
 
@@ -867,10 +760,10 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
 
   invisible(gc())
 
-  #4 MODULE 4 calculate_patch_stats ----
-  evo3d_df = final_result$aln_df
+  #STEP 8 MODULE 5 calculate_patch_stats ----
+  evo3d_df = residue_df
 
-  if (!compute_stats){
+  if (!calculate_stats){
     if (verbose >= 1) {
       cat('STEP 4: Skipping stats calculation...\n')
     }
@@ -881,20 +774,22 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
     }
 
     # add polymorphic sites -- needs wrapped across msa subsets #
+    # broken?
     if(stat_controls$calc_polymorphic){
       evo3d_df = calculate_polymorphic_residue(
         msa_info_sets,
         evo3d_df,
         valid_aa_only = stat_controls$valid_aa_only
-        )
+      )
     }
 
+    # very slow
     if(stat_controls$calc_patch_entropy){
       evo3d_df = calculate_patch_entropy(
-        msa = final_result$msa_subsets,
+        msa = final_msa_subsets,
         residue_df = evo3d_df,
         valid_aa_only = stat_controls$valid_aa_only
-        )
+      )
     }
 
     stat = c()
@@ -910,10 +805,11 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
       stat = c(stat, 'hap')
     }
 
+    # also slow but works
     if(length(stat) > 0){
-    evo3d_df = run_pegas_three(msa = final_result$msa_subsets,
-                               residue_df = evo3d_df,
-                               stat = stat)
+      evo3d_df = run_pegas_three(msa = final_msa_subsets,
+                                 residue_df = evo3d_df,
+                                 stat = stat)
     }
 
   }
@@ -925,9 +821,10 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
     aln_info_sets = NULL
   }
 
-  #5 saving to disk ----
+  #5 saving to disk (work on saving) ----
 
   # reorder the columns of evo3d_df #
+  if(F){
   # msa (if available), codon, msa_subset_id, ref_aa, pdbX_aa, pdbY_aa, ..., pdbX_residue_id, pdbY_residue_id, codon_patch, everything else #
   codon_info =  intersect(c("msa","codon","msa_subset_id","ref_aa"), names(evo3d_df))
   aa_cols = grep("^pdb.*_aa$", names(evo3d_df), value = TRUE)
@@ -935,7 +832,8 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   patch_col = "codon_patch"
   other = setdiff(names(evo3d_df), c(codon_info, aa_cols, id_cols, patch_col))
   col_order = c(codon_info, aa_cols, id_cols, patch_col, other)
-  evo3d_df = evo3d_df[, col_order, drop = FALSE]
+  #evo3d_df = evo3d_df[, col_order, drop = FALSE]  ** drop 8/25/25 **
+  }
 
   # if output_dir is not null then write results to disk #
   if (!is.null(output_controls$output_dir)) {
@@ -1038,7 +936,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   # CLEAN UP INTERMEDIATES TO DESIRED LEVEL ----
   if(detail_level < 2){
     # not returning msa subsets #
-    final_result$msa_subsets = NULL
+    final_msa_subsets = NULL
     invisible(gc())
   }
 
@@ -1053,12 +951,12 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   }
   return(list(
     evo3d_df = evo3d_df,
-    final_msa_subsets = final_result$msa_subsets,
+    final_msa_subsets = final_msa_subsets,
     msa_info_sets = msa_info_sets,
     pdb_info_sets = pdb_info_sets,
     aln_info_sets = aln_info_sets,
     call_info = call_info
-    )
+  )
   )
 
 }

@@ -277,6 +277,8 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 }
 
 # PDB UTILS ----
+
+# .standardize_pdb_input() ----
 #' Standardize PDB Input
 #'
 #' Reads a PDB or CIF file and returns a trimmed structure for specified chains.
@@ -293,6 +295,7 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
   # expects single entry #
   input_class = class(pdb)[1]
 
+  # At the end of if/else -- either pdb is read in or returns error #
   if(input_class == 'character'){
     if(!file.exists(pdb)){
       stop('PDB file does not exist: ', pdb)
@@ -318,12 +321,46 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
     stop('pdb provided is not a recognized format. Please provide a file path, an object from bio3d::read.pdb(), or an object from bio3d::read.cif().')
   }
 
-  # add residue id information #
+  # fix insert NA to ''
   pdb$atom$insert[is.na(pdb$atom$insert)] = ''
-  pdb$atom$residue_id = paste0(pdb$atom$resno, '_', pdb$atom$chain, '_', pdb$atom$insert)
 
-  # Thoughts to remove hetatm -- but they are all present for now #
-  # could even pass interface / occlusion as HETATOM in future #
+  # "+" is used internally to combine residues into patches -- make sure "+" doesnt exist to start #
+  in_resno = any(grepl('\\+', pdb$atom$resno))
+  in_chain = any(grepl('\\+', pdb$atom$chain))
+  in_insert = any(grepl('\\+', pdb$atom$insert))
+
+  if(any(in_resno, in_chain, in_insert)){
+    # replacements for "+"
+    replacements = c("!","$","%","&","~","@")
+
+    # used characters in set #
+    all_chars = paste(pdb$atom$resno, pdb$atom$chain, pdb$atom$insert, collapse = '')
+
+    # which replacement can we use
+    repl_char = NULL
+    for (cand in replacements) {
+      if (!grepl(cand, all_chars, fixed = TRUE)) {
+        repl_char = cand
+        break
+      }
+    }
+
+    # need to stop here and tell user I couldnt process this PDB it has "+" and couldn't use
+    # any of the replacement characters (all in use)
+
+    if(is.null(repl_char)){
+      stop("PDB contains '+' but all replacement characters (!,$,%,& ,~, @) are already in use. Cannot sanitize input safely.")
+    }
+
+    # replace those "+"
+    pdb$atom$resno = gsub('+', repl_char, pdb$atom$resno, fixed = TRUE)
+    pdb$atom$chain = gsub('+', repl_char, pdb$atom$chain, fixed = TRUE)
+    pdb$atom$insert = gsub('+', repl_char, pdb$atom$insert, fixed = TRUE)
+
+  }
+
+  # add residue id information #
+  pdb$atom$residue_id = paste0(pdb$atom$resno, '_', pdb$atom$chain, '_', pdb$atom$insert)
 
   # pass along pdb #
   return(pdb)
@@ -331,7 +368,7 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 }
 
 
-
+# .get_pdb_sequence() ----
 #' Extract Sequence from PDB
 #'
 #' Retrieves the amino acid sequence from a PDB file or object.
@@ -342,7 +379,7 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 #'
 #' @return A named character vector of sequences, one per chain.
 #' @export
-.get_pdb_sequence = function(pdb, chain = NA, in_module = F){
+.get_pdb_sequence = function(pdb, chain = NA, in_module = FALSE){
 
   #if running in module (.standardize_pdb_input() is already run) #
   if(!in_module){
@@ -356,15 +393,44 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
   # get pdb sequences with names as chains
   aa_seq = sapply(chain, function(x){
     paste0(
-      bio3d::pdbseq(bio3d::trim.pdb(pdb, chain = x)),
+      bio3d::pdbseq(bio3d::trim.pdb(pdb, chain = x, 'protein')),
       collapse = '')
   }, USE.NAMES = T)
 
   return(aa_seq)
 }
 
+.get_pdb_sequence_single = function(pdb, chain = NA){
+
+  # idea here is to return sequence, and residue_ids
+  pdb = bio3d::trim.pdb(pdb, chain = chain, 'protein')
+  #pdb = bio3d::trim.pdb(pdb, 'protein')
+  pdbseq = bio3d::pdbseq(pdb)
+
+  seqlen = length(pdbseq)
+
+  # get pdb sequences with names as chains
+  aa_seq = paste(pdbseq, collapse = '')
+
+  # return residue_ids
+  residue_ids = pdb$atom$residue_id
+  residue_ids = unique(residue_ids)
+
+  reslen = length(residue_ids)
+
+  if(seqlen != reslen){
+    message('pre align probably caught some het atoms in resids')
+  }
+
+  return(list(
+    aa_seq,
+    residue_ids
+    ))
+}
 
 
+
+# .calculate_residue_distance() ----
 #' Residue-wise Distance Matrix
 #'
 #' Computes a pairwise distance matrix between residues based on 3D coordinates.
@@ -376,7 +442,7 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 #'
 #' @return A square numeric matrix of distances.
 #' @export
-.calculate_residue_distance = function(pdb, chain = NA, distance_method = 'all', in_module = F){
+.calculate_residue_distance = function(pdb, chain = NA, distance_method = 'all', in_module = FALSE){
 
   # distance_method can be 'backbone', 'sidechain', 'ca', 'all'
   # hydrogens always removed
@@ -427,7 +493,7 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 }
 
 
-
+# .calculate_accessibility() ----
 #' Calculate Solvent Accessibility
 #'
 #' Estimates residue-wise solvent accessibility using a DSSP rewrite.
@@ -440,7 +506,7 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 #'
 #' @return A data frame with residue indices, exposure values, and metadata.
 #' @export
-.calculate_accessibility = function(pdb, chain = NULL, method = 'rose', drop_incomplete = T, in_module = F){
+.calculate_accessibility = function(pdb, chain = NULL, method = 'rose', drop_incomplete = TRUE, in_module = FALSE){
   # return residue wise solvent accessibility
 
   #if running in module (.standardize_pdb_input() is already run) #
@@ -477,8 +543,10 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
   # Extract atom data
   atoms = pdb$atom
 
-  # Drop hydrogen atoms and non-ATOM records
-  atoms = atoms[atoms$elesy != 'H' & atoms$type == 'ATOM', ]
+  # Drop hydrogen atoms and non-ATOM records (sometimes data is but into b factor that is too large -- messing up elesy - can we use elety)
+  #atoms = atoms[atoms$elesy != 'H' & atoms$type == 'ATOM', ]
+  # dropping elety
+  atoms = atoms[atoms$elety != 'H' & atoms$type == 'ATOM', ]
 
   # Handle residue numbering (each aa needs unique)
   atoms$orig_resno = atoms$resno
@@ -563,6 +631,45 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
   return(residue_df)
 }
 
+
+# .is_exposed() ----
+.is_exposed = function(residue_df, rsa_cutoff = NA,
+                       sasa_cutoff = NA, use_rsa_sasa = 'and') {
+
+  # how to combine (and or else)
+  if(any(is.na(c(rsa_cutoff, sasa_cutoff)))){
+    use_rsa_sasa = 'and'
+  }
+
+  # build exposure under rsa (if available)
+  if (!is.na(rsa_cutoff)) {
+    pass_rsa = residue_df$rsa >= rsa_cutoff
+  } else {
+    pass_rsa = TRUE
+  }
+
+  # build exposure under sasa (if available)
+  if (!is.na(sasa_cutoff)) {
+    pass_sasa = residue_df$sasa >= sasa_cutoff
+  } else {
+    pass_sasa = TRUE
+  }
+
+  # combine
+  if (use_rsa_sasa == "or") {
+    residue_df$exposed = (pass_rsa | pass_sasa)
+  } else {
+    # AND works here for no filters (both true),
+    # one filter (one is always true, other is test)
+    # and both filters (explicitly looking for and)
+    residue_df$exposed = (pass_rsa & pass_sasa)
+  }
+
+  return(residue_df)
+}
+
+
+# .identify_patches() ----
 #' Identify Surface Patches
 #'
 #' Defines residue patches around surface-exposed centroids based on RSA, SASA, and spatial distance.
@@ -577,83 +684,70 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 #'
 #' @return Updated \code{accessibility_df} with a \code{patch} column listing neighbors.
 #' @export
-.identify_patches = function(dist_mat, accessibility_df,
-                            rsa_cutoff = 0.1, sasa_cutoff = NULL,
-                            dist_cutoff = 15, max_patch = NULL,
-                            only_exposed_in_patch = F){
 
-  # returns patch around each residue #
-  # dist_mat is residue_dist from calculate_distance_matrix
-  # number of ways to define a window #
-  # patch centroids defined by
-  #     rsa_cutoff, or sasa_cutoff, or both NULL all residue
-  # neighbors defined by
-  #    dist_cutoff, or min_patch, or max_patch, or NULL all residues
-  #    further filtered by only_exposed_in_patch
+.identify_patches = function(dist_mat, residue_df,
+                             dist_cutoff = 15, max_patch = NA,
+                             only_exposed_in_patch = TRUE){
 
-  # !! THERE ARE OTHER METHODS TO ADD -- COULD SEPERATE THESE PATCHERS
-  # INTO DIFFERENT FUNCTIONS. OR Supply centroid_method = rsa, sasa, none
-  # acc_cutoff. Window method = dist, min_patch, max_patch, none #
+  # in case dist mat is too large #
+  res_ids = intersect(rownames(dist_mat), residue_df$residue_id)
+  dist_mat = dist_mat[res_ids, res_ids]
 
+  # first is to get seed residues #
+  # only exposed residues are seeds #
+  seeds = residue_df[residue_df$exposed,]
 
-  # expect dist_mat and accessibility_df to have same amount of residues
-  # could be different if residues dropped in calculate_accessibility()
-  # dont really need this res_id checking ***
-  res_ids = intersect(rownames(dist_mat), accessibility_df$residue_id)
-
-  # get centroids (amino acids that count as seed for patch)
-  if(!is.null(rsa_cutoff)){
-    centroids = accessibility_df[accessibility_df$rsa >= rsa_cutoff &
-                                   accessibility_df$residue_id %in% res_ids,]
-  } else if(!is.null(sasa_cutoff)){
-    centroids = accessibility_df[accessibility_df$sasa >= sasa_cutoff &
-                                   accessibility_df$residue_id %in% res_ids,]
-  } else {
-    centroids = accessibility_df[accessibility_df$residue_id %in% res_ids,]
-  }
-
-  # shrink dist mat to only exposed residues if desired
+  # If only exposed can be in patch -- shrink to seeds #
   if(only_exposed_in_patch){
-    in_set = centroids$residue_id
+    in_set = seeds$residue_id
     dist_mat = dist_mat[in_set, in_set]
   }
 
-  # get neighbors (in dist_cut and also check max_patch)
-  centroids$patch = NA
+  # get neighbors (could be dist_cutoff, or could be max_patch, or both)
+  seeds$patch = NA
+  seeds$patch_len = NA
+  seeds$max_dist = NA
 
-  for(i in 1:nrow(centroids)){
-    center = centroids$residue_id[i]
+  for(i in 1:nrow(seeds)){
+    center = seeds$residue_id[i]
 
-    # get neighbors
-    neighbors = dist_mat[center,
-                         names(which(dist_mat[center,] <= dist_cutoff))]
+    # get neighbors (sorted by distance) #
+    neighbors = sort(dist_mat[center,])
 
-    # check max_patch
-    if(!is.null(max_patch) && length(neighbors) > max_patch){
-      # sort neighbors and take the first max_patch
-      neighbors = sort(neighbors)
-      neighbors = neighbors[1:max_patch]
+    # filtered by dist_cut #
+    if(!is.na(dist_cutoff)){
+      neighbors = neighbors[neighbors <= dist_cutoff]
     }
 
-    # add to centroids
-    centroids$patch[i] = paste0(names(neighbors), collapse = '+')
+    # filtered by max_patch #
+    if(!is.na(max_patch)){
+      neighbors = neighbors[1:min(c(length(neighbors), max_patch))]
+    }
+
+    # add to seeds
+
+
+    if (length(neighbors) > 0) {
+      seeds$patch[i] = paste0(names(neighbors), collapse = '+')
+      seeds$patch_len[i] = length(neighbors)
+      seeds$max_dist[i] = round(max(neighbors),2)
+    } else {
+      patch_len = 0
+    }
   }
 
-  # add back to accessibility_df
-  accessibility_df$patch = NA
+  # add back to residue_df
+  idx = match(seeds$residue_id, residue_df$residue_id)
+  residue_df$patch[idx] = seeds$patch
+  residue_df$patch_len[idx] = seeds$patch_len
+  residue_df$max_dist[idx] = seeds$max_dist
 
-  # join back
-  accessibility_df$patch[match(centroids$residue_id, accessibility_df$residue_id)] = centroids$patch
 
-  #accessibility_df$patch_method = paste0('-rsa ', rsa_cutoff, ' -sasa ', sasa_cutoff,
-  #                                       ' -dist ', dist_cutoff, ' -max ', max_patch,
-  #                                       ' -only_exposed ', only_exposed_in_patch)
-  #
 
-  return(accessibility_df)
+  return(residue_df)
 }
 
-
+# .identify_interfaces() ----
 #' Identify Interface Contacts
 #'
 #' Finds epitope and paratope residues from a PDB structure using chain-based atom distances.
@@ -701,6 +795,7 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
   ))
 }
 
+# pdb_to_patch() ----
 #' Extract Surface Patches from PDB
 #'
 #' High-level wrapper for computing sequences, distances, solvent accessibility, and patches from a PDB structure.
@@ -721,21 +816,22 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 #' @export
 pdb_to_patch = function(pdb, chain = NA, interface_chain = NA, occlusion_chain = NA,
                         distance_method = 'all',
-                        drop_incomplete_residue = T, rsa_method = 'rose',
-                        patch_dist_cutoff = 15, patch_rsa_cutoff = 0.1,
-                        patch_sasa_cutoff = NA, patch_exposed_only = T,
-                        max_patch = NULL, interface_dist_cutoff = 5, verbose = 1, detail_level = 1,
-                        force_file_type = NULL){
+                        drop_incomplete_residue = TRUE, rsa_method = 'rose',
+                        dist_cutoff = 15, rsa_cutoff = 0.1,
+                        sasa_cutoff = NA, only_exposed_in_patch = TRUE,
+                        use_rsa_sasa = 'and',
+                        max_patch = NA, interface_dist_cutoff = 5, verbose = 1, detail_level = 1,
+                        force_file_type = NULL, patch_mode = 'justaholder'){
 
   # need to validate more inputs #
 
   # split chain and occlusion chain (they dont need grouped)
   if(!(length(chain) == 1 && is.na(chain))) {
-    chain <- unlist(strsplit(chain, split = ''))
+    chain = unlist(strsplit(chain, split = ''))
   }
 
   if(!(length(occlusion_chain) == 1 && is.na(occlusion_chain))) {
-    occlusion_chain <- unlist(strsplit(occlusion_chain, split = ''))
+    occlusion_chain = unlist(strsplit(occlusion_chain, split = ''))
   }
 
   # step 0: validate pdb and return pdb object ----
@@ -770,27 +866,35 @@ pdb_to_patch = function(pdb, chain = NA, interface_chain = NA, occlusion_chain =
 
   chain_set = c(chain, occlusion_chain)
   chain_set = chain_set[!is.na(chain_set)]
+
+  # probably need a slot of occlusion chain, so its not in resulting residue df #
   residue_df = .calculate_accessibility(pdb, chain = chain_set,
                                        drop_incomplete = drop_incomplete_residue,
                                        method = rsa_method,
                                        in_module = T)
 
-  # can skip if rsa or sasa filters are 0 #
-  # just build residue df #
+  # residue_dist could have residues not present in residue_df ** if drop_incomplete_residue #
+  # just keep in mind #
 
-  # step 4: identify surface patches (expands residue_df)
+  # step 3.5: classifying exposure ----
+  residue_df = .is_exposed(residue_df = residue_df,
+                           rsa_cutoff = rsa_cutoff,
+                           sasa_cutoff = sasa_cutoff,
+                           use_rsa_sasa = use_rsa_sasa)
+
+
+  # step 4: identify surface patches (expands residue_df) ----
   if(verbose > 0){
     cat('\tpdb_to_patch: Identifying patches\n')
   }
 
   residue_df = .identify_patches(residue_dist,
-                                residue_df, only_exposed_in_patch = patch_exposed_only,
-                                dist_cutoff = patch_dist_cutoff,
-                                rsa_cutoff = patch_rsa_cutoff,
-                                sasa_cutoff = patch_sasa_cutoff,
+                                residue_df, only_exposed_in_patch = only_exposed_in_patch,
+                                dist_cutoff = dist_cutoff,
                                 max_patch = max_patch)
 
   # step 5: capture interface patches #
+  # --- 9.30.25 -- may need debug dont know yet
   if(!(length(interface_chain) == 1 && is.na(interface_chain))){
 
     if(verbose > 0){
@@ -810,8 +914,6 @@ pdb_to_patch = function(pdb, chain = NA, interface_chain = NA, occlusion_chain =
 
   }
 
-  # could change call from loop to apply, but this is fine for now #
-
   # detail level will control return #
   # 0 - just pdb obj, seq_set, and residue_df
   # 1 - pdb obj, seq_set, residue_df, and chain
@@ -819,7 +921,7 @@ pdb_to_patch = function(pdb, chain = NA, interface_chain = NA, occlusion_chain =
 
   # return list object
   return(list(
-    pdb = pdb,
+    pdb = NULL,  # 8/20/25 - turned null (already stored elsewhere)
     chain = if (detail_level > 0) chain else NULL,
     seq_set = seq_set,
     residue_dist = if (detail_level > 1) residue_dist else NULL,
@@ -827,3 +929,4 @@ pdb_to_patch = function(pdb, chain = NA, interface_chain = NA, occlusion_chain =
   ))
 
 }
+
