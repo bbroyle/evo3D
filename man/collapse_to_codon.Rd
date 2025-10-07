@@ -73,8 +73,8 @@ using nearest upstream/downstream real codons.
 
 variable-length mode uses union builders:
 \itemize{
-  \item \code{merge_type = "distance"} → union of geometric neighbors
-  \item \code{merge_type = "exposure_distance"} → union with exposure filtering
+  \item \code{merge_type = "distance"} union of geometric neighbors
+  \item \code{merge_type = "exposure_distance"} union with exposure filtering
         (seed-only or all-members via \code{only_exposed_in_patch})
 }
 fixed-size mode uses nearest-neighbor ranking across pdb contexts with two schemes:

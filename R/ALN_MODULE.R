@@ -424,20 +424,20 @@
 
   # and anything else #
   # your desired order
-  wanted_order <- c(
+  wanted_order = c(
     "codon_id", "codon", "msa", "pdb", "residue_id", "ref_aa", "pdb_aa",
     "codon_patch", "codon_len", "unique_codon", "gap_map_count",
     "exposed", "max_dist", "patch", "patch_len"
   )
 
   # columns in data that match your desired order
-  present <- intersect(wanted_order, names(aln_table))
+  present = intersect(wanted_order, names(aln_table))
 
   # everything else (not in your desired order)
-  extra <- setdiff(names(aln_table), wanted_order)
+  extra = setdiff(names(aln_table), wanted_order)
 
   # final reordering
-  aln_table <- aln_table[ , c(present, extra)]
+  aln_table = aln_table[ , c(present, extra)]
 
 
   # last clean up if codon_patch is '' set all codon info to NA #
@@ -643,20 +643,20 @@
   # ---- Fixed patch scheme (max_patch is set) ----
 
   # Step 0: separate interfaces
-  ro <- grep("^interface", residue_df$residue_id)
-  interface_df <- NULL
+  ro = grep("^interface", residue_df$residue_id)
+  interface_df = NULL
   if (length(ro)) {
-    interface_df <- residue_df[ro, ]
-    residue_df <- residue_df[-ro, ]
+    interface_df = residue_df[ro, ]
+    residue_df = residue_df[-ro, ]
   }
 
   # Step 1: rebuild patches depending on mode
   if (patch_mode == "codon") {
-    ro <- which(!is.na(residue_df$codon_patch) & residue_df$unique_codon < max_patch)
+    ro = which(!is.na(residue_df$codon_patch) & residue_df$unique_codon < max_patch)
 
     if(length(ro)){
       # grab valid replacements #
-      valid <- residue_df[residue_df$codon != "-" &
+      valid = residue_df[residue_df$codon != "-" &
                             residue_df$pdb_aa != "-" &
                             (if (only_exposed_in_patch) residue_df$exposed else TRUE),
                           c("codon_id", "residue_id"), drop = FALSE]
@@ -665,41 +665,41 @@
       if(nrow(valid)){
 
         # trim dist_mat
-        d <- pdb_info$residue_dist
-        d <- d[, valid$residue_id, drop = FALSE]
+        d = pdb_info$residue_dist
+        d = d[, valid$residue_id, drop = FALSE]
 
         # make mapping
-        res2cod <- setNames(valid$codon_id, valid$residue_id)
+        res2cod = setNames(valid$codon_id, valid$residue_id)
 
         # loop through ro #
         for (i in ro) {
-          resi <- residue_df$residue_id[i]
+          resi = residue_df$residue_id[i]
           if (!resi %in% rownames(d)) next
 
-          d2 <- sort(d[resi, , drop = TRUE])
-          if (!is.na(dist_cutoff)) d2 <- d2[d2 <= dist_cutoff]
+          d2 = sort(d[resi, , drop = TRUE])
+          if (!is.na(dist_cutoff)) d2 = d2[d2 <= dist_cutoff]
           if (!length(d2)) next
 
-          cod_seq <- res2cod[names(d2)]
-          uniq_cod <- cod_seq[!duplicated(cod_seq)]
-          set <- uniq_cod[seq_len(min(max_patch, length(uniq_cod)))]
+          cod_seq = res2cod[names(d2)]
+          uniq_cod = cod_seq[!duplicated(cod_seq)]
+          set = uniq_cod[seq_len(min(max_patch, length(uniq_cod)))]
 
           residue_df$patch_len[i] = length(set)
-          residue_df$patch[i]       <- paste(names(set), collapse = "+")
-          residue_df$codon_patch[i] <- paste(set, collapse = "+")
-          residue_df$codon_len[i]   <- length(set)
-          residue_df$unique_codon[i]<- length(unique(set)) # codon_len and unique_codon should be the same #
+          residue_df$patch[i] = paste(names(set), collapse = "+")
+          residue_df$codon_patch[i] = paste(set, collapse = "+")
+          residue_df$codon_len[i] = length(set)
+          residue_df$unique_codon[i]= length(unique(set)) # codon_len and unique_codon should be the same #
         }
       }
 
 
       }
     } else if (patch_mode == "residue") {
-      ro <- which(!is.na(residue_df$codon_patch) & residue_df$codon_len < max_patch)
+      ro = which(!is.na(residue_df$codon_patch) & residue_df$codon_len < max_patch)
 
       if(length(ro)){
         # grab valid replacements #
-        valid <- residue_df[residue_df$codon != "-" &
+        valid = residue_df[residue_df$codon != "-" &
                               residue_df$pdb_aa != "-" &
                               (if (only_exposed_in_patch) residue_df$exposed else TRUE),
                             c("codon_id", "residue_id"), drop = FALSE]
@@ -708,29 +708,29 @@
         if(nrow(valid)){
 
           # trim dist_mat
-          d <- pdb_info$residue_dist
-          d <- d[, valid$residue_id, drop = FALSE]
+          d = pdb_info$residue_dist
+          d = d[, valid$residue_id, drop = FALSE]
 
           # make mapping
-          res2cod <- setNames(valid$codon_id, valid$residue_id)
+          res2cod = setNames(valid$codon_id, valid$residue_id)
 
           # loop through ro #
           for (i in ro) {
-            resi <- residue_df$residue_id[i]
+            resi = residue_df$residue_id[i]
             if (!resi %in% rownames(d)) next
 
-            d2 <- sort(d[resi, , drop = TRUE])
-            if (!is.na(dist_cutoff)) d2 <- d2[d2 <= dist_cutoff]
+            d2 = sort(d[resi, , drop = TRUE])
+            if (!is.na(dist_cutoff)) d2 = d2[d2 <= dist_cutoff]
             if (!length(d2)) next
 
-            take_k <- min(length(d2), max_patch)
-            set <- names(d2)[seq_len(take_k)]
+            take_k = min(length(d2), max_patch)
+            set = names(d2)[seq_len(take_k)]
 
-            residue_df$patch_len[i]   = length(set)
-            residue_df$patch[i]       <- paste(set, collapse = "+")
-            residue_df$codon_patch[i] <- paste(res2cod[set], collapse = "+")
-            residue_df$codon_len[i]   <- length(res2cod[set])
-            residue_df$unique_codon[i]<- length(unique(res2cod[set]))
+            residue_df$patch_len[i] = length(set)
+            residue_df$patch[i] = paste(set, collapse = "+")
+            residue_df$codon_patch[i] = paste(res2cod[set], collapse = "+")
+            residue_df$codon_len[i] = length(res2cod[set])
+            residue_df$unique_codon[i] = length(unique(res2cod[set]))
           }
         }
       }
