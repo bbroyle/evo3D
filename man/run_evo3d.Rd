@@ -110,9 +110,9 @@ Internally calls the MSA, PDB, alignment, codon-collapse, and stats modules.
 \details{
 \strong{Flow:}
 \enumerate{
-  \item MSA \textrightarrow{} reference peptide (\code{msa_to_ref()}).
-  \item PDB \textrightarrow{} distances, accessibility, patches (\code{pdb_to_patch()}).
-  \item Align ref–PDB, map residues \textrightarrow{} codons (\code{aln_msa_to_pdb()}).
+  \item MSA -> reference peptide (\code{msa_to_ref()}).
+  \item PDB -> distances, accessibility, patches (\code{pdb_to_patch()}).
+  \item Align ref–PDB, map residues -> codons (\code{aln_msa_to_pdb()}).
   \item Merge multi-PDB/multimer contexts to codon windows (\code{collapse_to_codon()}).
   \item Extract codon-aligned nucleotide windows (\code{.extract_msa_subsets()}).
   \item (Optional) Compute stats (\code{run_pegas_three()}, \code{calculate_patch_entropy()},
