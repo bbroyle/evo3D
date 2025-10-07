@@ -21,11 +21,11 @@ write_patch_fastas_slow = function(msa_subsets, output_dir = 'patch_fastas') {
     dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
   }
 
-  file_paths <- file.path(output_dir, paste0(names(msa_subsets), ".fa"))
+  file_paths = file.path(output_dir, paste0(names(msa_subsets), ".fa"))
   for (i in seq_along(msa_subsets)) {
-    fa_mat <- msa_subsets[[i]]
-    seqs <- do.call(paste0, as.data.frame(fa_mat, stringsAsFactors = FALSE))
-    lines <- paste0(">", row.names(fa_mat), "\n", seqs)
+    fa_mat = msa_subsets[[i]]
+    seqs = do.call(paste0, as.data.frame(fa_mat, stringsAsFactors = FALSE))
+    lines = paste0(">", row.names(fa_mat), "\n", seqs)
     writeLines(lines, con = file_paths[i])
   }
 }
@@ -47,23 +47,23 @@ write_patch_fastas_slow = function(msa_subsets, output_dir = 'patch_fastas') {
 #' @return invisibly returns \code{NULL}. fasta files are written to disk
 #' @export
 
-write_patch_fastas <- function(msa_subsets, output_dir = "patch_fastas") {
-  temp_dir <- tempfile("patch_fastas_")
+write_patch_fastas = function(msa_subsets, output_dir = "patch_fastas") {
+  temp_dir = tempfile("patch_fastas_")
   dir.create(temp_dir)
 
   for (i in seq_along(msa_subsets)) {
-    fa_mat <- msa_subsets[[i]]
-    seqs <- do.call(paste0, as.data.frame(fa_mat, stringsAsFactors = FALSE))
-    lines <- paste0(">", row.names(fa_mat), "\n", seqs)
+    fa_mat = msa_subsets[[i]]
+    seqs = do.call(paste0, as.data.frame(fa_mat, stringsAsFactors = FALSE))
+    lines = paste0(">", row.names(fa_mat), "\n", seqs)
     writeLines(lines, file.path(temp_dir, paste0(names(msa_subsets)[i], ".fa")))
   }
 
   # Set wd to temp_dir for relative tar
-  old_wd <- getwd()
+  old_wd = getwd()
   setwd(temp_dir)
   on.exit(setwd(old_wd), add = TRUE)  # protect session even on failure
 
-  tar_path <- tempfile(fileext = ".tar.gz")
+  tar_path = tempfile(fileext = ".tar.gz")
   utils::tar(tarfile = tar_path, files = list.files(), compression = "gzip")
 
   setwd(old_wd)  # <-- move back BEFORE untar
@@ -169,7 +169,7 @@ write_patch_pymol = function(patches){
   #cat(cmd_list, sep = '\n')
 
   # get color per patch #
-  colors <- grDevices::hcl.colors(nrow(patches), palette = 'Dynamic')
+  colors  grDevices::hcl.colors(nrow(patches), palette = 'Dynamic')
   colors = gsub('#', '', colors)
   colors = colors[sample(1:length(colors))]
   color_cmd = paste0('color 0x', colors, ', patch_', 1:nrow(patches))
@@ -459,12 +459,12 @@ calculate_polymorphic_residue = function(msa_info_sets, residue_df, valid_aa_onl
 
 
     # build lookups
-    poly_lookup   <- setNames(res$polymorphic, res$codon_id)
-    entropy_lookup <- setNames(res$site_entropy, res$codon_id)
+    poly_lookup    setNames(res$polymorphic, res$codon_id)
+    entropy_lookup  setNames(res$site_entropy, res$codon_id)
 
     # assign by matching codon_id
-    residue_df$polymorphic <- poly_lookup[residue_df$codon_id]
-    residue_df$site_entropy <- entropy_lookup[residue_df$codon_id]
+    residue_df$polymorphic  poly_lookup[residue_df$codon_id]
+    residue_df$site_entropy  entropy_lookup[residue_df$codon_id]
 
   }
 }

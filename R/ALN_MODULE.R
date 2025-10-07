@@ -61,8 +61,8 @@
 #'
 #' @examples
 #' \dontrun{
-#' pep <- "MKTFFVAGVILLLVATATGVHS"
-#' pdb <- standardize_pdb_input("my_structure.pdb")
+#' pep = "MKTFFVAGVILLLVATATGVHS"
+#' pdb = standardize_pdb_input("my_structure.pdb")
 #' auto_detect_chain(pep, pdb)
 #' }
 #'
@@ -72,12 +72,12 @@
 .auto_detect_chain = function(pep, pdb, k = 4, in_module = F){
 
   # Changed to coverage instead of jaccard
-  kmer_coverage <- function(pdb_seq, msa_seq) {
+  kmer_coverage = function(pdb_seq, msa_seq) {
     # seq is too short for kmer - just return 0
     if (nchar(pdb_seq) < k || nchar(msa_seq) < k) return(0)
 
-    pdb_kmers <- substring(pdb_seq, 1:(nchar(pdb_seq) - k + 1), k:(nchar(pdb_seq)))
-    msa_kmers <- substring(msa_seq, 1:(nchar(msa_seq) - k + 1), k:(nchar(msa_seq)))
+    pdb_kmers = substring(pdb_seq, 1:(nchar(pdb_seq) - k + 1), k:(nchar(pdb_seq)))
+    msa_kmers = substring(msa_seq, 1:(nchar(msa_seq) - k + 1), k:(nchar(msa_seq)))
 
     # What fraction of PDB kmers are found in MSA?
     return(length(intersect(pdb_kmers, msa_kmers)) / length(pdb_kmers))
@@ -738,7 +738,7 @@
 
   # Step 2: reattach interfaces
   if (!is.null(interface_df)) {
-    residue_df <- rbind(residue_df, interface_df)
+    residue_df = rbind(residue_df, interface_df)
   }
 
   return(residue_df)
@@ -858,7 +858,7 @@ aln_msa_to_pdb = function(msa_info, pdb_info, chain = 'auto',
     aln_sets[[i]] = .align_sequences(c(pep, seq))
 
     # add msa and pdb info here (pdb_id and msa_id can pull from wrapper level -- as module it just is pdb1, and msa1-n)
-    aln_sets[[i]]$aln_mat <- cbind(aln_sets[[i]]$aln_mat, msa = run_grid$msa[i], pdb = run_grid$pdb[i])
+    aln_sets[[i]]$aln_mat = cbind(aln_sets[[i]]$aln_mat, msa = run_grid$msa[i], pdb = run_grid$pdb[i])
 
     names(aln_sets)[i] = paste0(run_grid$msa[i], '_', run_grid$pdb[i], '_', run_grid$chain[i])
   }
@@ -932,8 +932,8 @@ aln_msa_to_pdb = function(msa_info, pdb_info, chain = 'auto',
   }
 
   # step 5: gather coverage data for individual aliments and return ----
-  aln_sets <- lapply(aln_sets, function(x) {
-    x$aln_mat <- NULL
+  aln_sets = lapply(aln_sets, function(x) {
+    x$aln_mat = NULL
     x
   })
 

@@ -27,7 +27,7 @@
 
 .split_pdb_column = function(df) {
   # store the intended codon order
-  codon_order <- unique(df$codon_id)
+  codon_order = unique(df$codon_id)
 
   # keep msa and codon along with codon_id
   base = aggregate(
@@ -203,17 +203,17 @@
 #'   \item exposure_distance + only_exposed_in_patch = TRUE – all residues must be exposed
 #' }
 
-.variable_size_merge <- function(codon_df, residue_df, merge_type = c("distance", "exposure_distance"),
+.variable_size_merge = function(codon_df, residue_df, merge_type = c("distance", "exposure_distance"),
                                  only_exposed_in_patch = FALSE) {
-  merge_type <- match.arg(merge_type)
+  merge_type = match.arg(merge_type)
 
-  codon_ids <- unique(codon_df$codon_id)
-  codon_ids <- codon_ids[!is.na(codon_ids)]
+  codon_ids = unique(codon_df$codon_id)
+  codon_ids = codon_ids[!is.na(codon_ids)]
 
   if (merge_type == "distance") {
     # Geometry only: only rebuild when >1 residue
-    new_p <- lapply(codon_ids, function(x) {
-      ro <- which(residue_df$codon_id == x)
+    new_p = lapply(codon_ids, function(x) {
+      ro = which(residue_df$codon_id == x)
       if (length(ro) > 1) {
         .union_distance(residue_df$codon_patch[ro])
       } else if (length(ro) == 1) {
@@ -222,15 +222,15 @@
         NA
       }
     })
-    hold <- data.frame(codon_id = codon_ids, codon_patch = unlist(new_p))
+    hold = data.frame(codon_id = codon_ids, codon_patch = unlist(new_p))
 
   } else if (merge_type == "exposure_distance" && !only_exposed_in_patch) {
     # Allow buried members: same as distance, then filter buried seeds
-    valid_codons <- codon_df$codon_id[codon_df$exposed]
-    valid_codons <- valid_codons[!is.na(valid_codons)]
+    valid_codons = codon_df$codon_id[codon_df$exposed]
+    valid_codons = valid_codons[!is.na(valid_codons)]
 
-    new_p <- lapply(codon_ids, function(x) {
-      ro <- which(residue_df$codon_id == x)
+    new_p = lapply(codon_ids, function(x) {
+      ro = which(residue_df$codon_id == x)
       if (length(ro) > 1) {
         .union_distance(residue_df$codon_patch[ro])
       } else if (length(ro) == 1) {
@@ -239,31 +239,31 @@
         NA
       }
     })
-    hold <- data.frame(codon_id = codon_ids, codon_patch = unlist(new_p))
+    hold = data.frame(codon_id = codon_ids, codon_patch = unlist(new_p))
     # Seed-level exposure filter
-    hold$codon_patch[!hold$codon_id %in% valid_codons] <- NA
+    hold$codon_patch[!hold$codon_id %in% valid_codons] = NA
 
   } else if (merge_type == "exposure_distance" && only_exposed_in_patch) {
     # All residues (seeds + members) must be exposed, always rebuild
-    valid_codons <- codon_df$codon_id[codon_df$exposed]
-    valid_codons <- valid_codons[!is.na(valid_codons)]
+    valid_codons = codon_df$codon_id[codon_df$exposed]
+    valid_codons = valid_codons[!is.na(valid_codons)]
 
-    new_p <- lapply(codon_ids, function(x) {
-      ro <- which(residue_df$codon_id == x)
+    new_p = lapply(codon_ids, function(x) {
+      ro = which(residue_df$codon_id == x)
       if (length(ro) > 0) {
         .union_exposure_distance(residue_df$codon_patch[ro], valid_codons)
       } else {
         NA
       }
     })
-    hold <- data.frame(codon_id = codon_ids, codon_patch = unlist(new_p))
+    hold = data.frame(codon_id = codon_ids, codon_patch = unlist(new_p))
     # Explicitly drop buried seeds
-    hold$codon_patch[!hold$codon_id %in% valid_codons] <- NA
+    hold$codon_patch[!hold$codon_id %in% valid_codons] = NA
   }
 
   # Update codon_df with new patches
-  codon_df$codon_patch <- NA
-  codon_df$codon_patch[match(hold$codon_id, codon_df$codon_id)] <- hold$codon_patch
+  codon_df$codon_patch = NA
+  codon_df$codon_patch[match(hold$codon_id, codon_df$codon_id)] = hold$codon_patch
 
 
 
@@ -420,17 +420,17 @@
         closest_codons = context_codons
         names(closest_codons) = gsub('context[0-9]+_', '', names(closest_codons))
 
-        patch <- character()
+        patch = character()
         while(length(closest_codons)) {
-          c1 <- closest_codons[1]
-          patch <- c(patch, c1)
+          c1 = closest_codons[1]
+          patch = c(patch, c1)
 
           for(c in contexts){
-            id <- paste0(c, '_', names(c1))
-            pos <- match(id, names(context_codons))
+            id = paste0(c, '_', names(c1))
+            pos = match(id, names(context_codons))
             if(!is.na(pos)) {
-              closest_codons <- closest_codons[-pos[1]]
-              context_codons <- context_codons[-pos[1]]
+              closest_codons = closest_codons[-pos[1]]
+              context_codons = context_codons[-pos[1]]
             }
           }
 
@@ -566,17 +566,17 @@
         closest_codons = context_codons
         names(closest_codons) = gsub('context[0-9]+_', '', names(closest_codons))
 
-        patch <- character()
+        patch = character()
         while(length(closest_codons)) {
-          c1 <- closest_codons[1]
-          patch <- c(patch, c1)
+          c1 = closest_codons[1]
+          patch = c(patch, c1)
 
           for(c in contexts){
-            id <- paste0(c, '_', names(c1))
-            pos <- match(id, names(context_codons))
+            id = paste0(c, '_', names(c1))
+            pos = match(id, names(context_codons))
             if(!is.na(pos)) {
-              closest_codons <- closest_codons[-pos[1]]
-              context_codons <- context_codons[-pos[1]]
+              closest_codons = closest_codons[-pos[1]]
+              context_codons = context_codons[-pos[1]]
             }
           }
 
@@ -713,17 +713,17 @@
         closest_codons = context_codons
         names(closest_codons) = gsub('context[0-9]+_', '', names(closest_codons))
 
-        patch <- character()
+        patch = character()
         while(length(closest_codons)) {
-          c1 <- closest_codons[1]
-          patch <- c(patch, c1)
+          c1 = closest_codons[1]
+          patch = c(patch, c1)
 
           for(c in contexts){
-            id <- paste0(c, '_', names(c1))
-            pos <- match(id, names(context_codons))
+            id = paste0(c, '_', names(c1))
+            pos = match(id, names(context_codons))
             if(!is.na(pos)) {
-              closest_codons <- closest_codons[-pos[1]]
-              context_codons <- context_codons[-pos[1]]
+              closest_codons = closest_codons[-pos[1]]
+              context_codons = context_codons[-pos[1]]
             }
           }
 

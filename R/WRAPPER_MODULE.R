@@ -379,20 +379,20 @@ show_evo3d_defaults = function(module_name = NULL){
 
   # now if nchar(chain) > 1 -- this is homodimer/trimer complex -- need to split into three rows? #
   # or handle later so i only do one msa to pdb mapping? #
-  multichain <- which(nchar(run_grid$chain) > 1 & run_grid$chain != 'auto')
+  multichain = which(nchar(run_grid$chain) > 1 & run_grid$chain != 'auto')
   if(length(multichain) > 0){
-    expanded_rows <- list()
+    expanded_rows = list()
     for(i in multichain) {
-      chains <- strsplit(run_grid$chain[i], "")[[1]]
+      chains = strsplit(run_grid$chain[i], "")[[1]]
       for(chain in chains) {
-        new_row <- run_grid[i, ]
-        new_row$chain <- chain
-        expanded_rows <- append(expanded_rows, list(new_row))
+        new_row = run_grid[i, ]
+        new_row$chain = chain
+        expanded_rows = append(expanded_rows, list(new_row))
       }
     }
 
     # Remove original multichain rows and add expanded ones
-    run_grid <- rbind(run_grid[-multichain, ], do.call(rbind, expanded_rows))
+    run_grid = rbind(run_grid[-multichain, ], do.call(rbind, expanded_rows))
   }
 
   # return
@@ -421,10 +421,10 @@ show_evo3d_defaults = function(module_name = NULL){
 #'   \item{tag}{timestamp tag if fallback used, NULL otherwise}
 #' @keywords internal
 #
-.safe_save <- function(path, is_dir = FALSE) {
-  base <- tools::file_path_sans_ext(path)
-  ext  <- tools::file_ext(path)
-  ext  <- if (nzchar(ext)) paste0(".", ext) else ""
+.safe_save = function(path, is_dir = FALSE) {
+  base = tools::file_path_sans_ext(path)
+  ext  = tools::file_ext(path)
+  ext  = if (nzchar(ext)) paste0(".", ext) else ""
 
   # If safe, return original
   if (!file.exists(path)) return(list(path = path, tag = NULL))
@@ -432,10 +432,10 @@ show_evo3d_defaults = function(module_name = NULL){
   if (!is_dir && file.info(path)$size == 0) return(list(path = path, tag = NULL))
 
   # Use systime + pid fallback
-  systime <- Sys.time()
-  pid <- Sys.getpid()
-  tag <- paste0(format(systime, "%Y%m%d%H%M%S"), "_pid", pid)
-  tagged_path <- if (is_dir) paste0(base, "_", tag) else paste0(base, "_", tag, ext)
+  systime = Sys.time()
+  pid = Sys.getpid()
+  tag = paste0(format(systime, "%Y%m%d%H%M%S"), "_pid", pid)
+  tagged_path = if (is_dir) paste0(base, "_", tag) else paste0(base, "_", tag, ext)
 
   list(path = tagged_path, tag = tag)
 }
@@ -700,7 +700,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
 
   if (verbose > 1) {
     cat("\tRun grid for rest of analysis:\n\n")
-    out <- capture.output(print(run_grid))
+    out = capture.output(print(run_grid))
     cat(paste0("\t", out), sep = "\n")
     cat('\n')
   }
@@ -732,15 +732,15 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   bad_pdbs = names(pdb_valid)[!pdb_valid]
 
   if (length(bad_msas) > 0 || length(bad_pdbs) > 0) {
-    stop_msg <- "!!! STOPPING EVO3D RUN !!!\nThe following MSAs or PDBs had no valid mappings:\n"
+    stop_msg = "!!! STOPPING EVO3D RUN !!!\nThe following MSAs or PDBs had no valid mappings:\n"
     if (length(bad_msas) > 0) {
-      stop_msg <- paste0(stop_msg, sprintf("MSAs: %s\n", paste(bad_msas, collapse = ", ")))
+      stop_msg = paste0(stop_msg, sprintf("MSAs: %s\n", paste(bad_msas, collapse = ", ")))
     }
     if (length(bad_pdbs) > 0) {
-      stop_msg <- paste0(stop_msg, sprintf("PDBs: %s\n", paste(bad_pdbs, collapse = ", ")))
+      stop_msg = paste0(stop_msg, sprintf("PDBs: %s\n", paste(bad_pdbs, collapse = ", ")))
     }
-    stop_msg <- paste0(stop_msg, "Please check inputs and call_info\n")
-    stop_msg <- paste0(stop_msg, "Not advised but set auto_chain_threshold = 0 to skip this check")
+    stop_msg = paste0(stop_msg, "Please check inputs and call_info\n")
+    stop_msg = paste0(stop_msg, "Not advised but set auto_chain_threshold = 0 to skip this check")
     message(paste0(stop_msg, "\n"))
 
     return(list(

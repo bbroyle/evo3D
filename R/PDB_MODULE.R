@@ -242,7 +242,7 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 .plot_chain_map = function(pdb, chain = NA, in_module = FALSE) {
 
   # local helper to compute coords
-  mds_pdb <- function(pdb, chain, in_module) {
+  mds_pdb = function(pdb, chain, in_module) {
     pdb = .standardize_pdb_input(pdb)
     ca = pdb$atom[pdb$atom$elety == "CA", ]
 
@@ -251,7 +251,7 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
     }
     ca$insert = ifelse(is.na(ca$insert), "", ca$insert)
 
-    mds_coords <- cmdscale(dist(ca[, c("x", "y", "z")]), k = 2)
+    mds_coords = cmdscale(dist(ca[, c("x", "y", "z")]), k = 2)
 
     data.frame(
       residue_id = paste0(ca$resno, "_", ca$chain, "_", ca$insert),
@@ -262,21 +262,21 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
   }
 
   # compute coords
-  plot_df <- mds_pdb(pdb, chain, in_module = in_module)
+  plot_df = mds_pdb(pdb, chain, in_module = in_module)
 
   # median coords for labels
-  label_df <- aggregate(cbind(x, y) ~ chain, data = plot_df, FUN = median)
+  label_df = aggregate(cbind(x, y) ~ chain, data = plot_df, FUN = median)
 
   # make sure chain is character
-  chain_ids <- unique(plot_df$chain)
+  chain_ids = unique(plot_df$chain)
 
   if (length(chain_ids) == 0) {
     stop("No chains found for plotting")
   }
 
   # if only one chain, still assign a color
-  cols <- if (length(chain_ids) == 1) "black" else rainbow(length(chain_ids))
-  col_map <- setNames(cols, chain_ids)
+  cols = if (length(chain_ids) == 1) "black" else rainbow(length(chain_ids))
+  col_map = setNames(cols, chain_ids)
 
   # plot points
   plot(
@@ -509,8 +509,8 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
   colnames(res_dist) = rownames(res_dist) = unique(pdb$atom$residue_id)
 
   # set diag to 0 and make symmetrical
-  res_dist <- pmin(res_dist, t(res_dist), na.rm = TRUE)
-  diag(res_dist) <- 0
+  res_dist = pmin(res_dist, t(res_dist), na.rm = TRUE)
+  diag(res_dist) = 0
 
   # return residue wise distance matrix
   return(res_dist)
