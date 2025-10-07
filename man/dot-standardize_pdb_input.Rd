@@ -2,18 +2,25 @@
 % Please edit documentation in R/PDB_MODULE.R
 \name{.standardize_pdb_input}
 \alias{.standardize_pdb_input}
-\title{Standardize PDB Input}
+\title{standardize pdb input}
 \usage{
-.standardize_pdb_input(pdb)
+.standardize_pdb_input(pdb, force_file_type = NULL)
 }
 \arguments{
-\item{pdb}{A PDB object, or path to pdb or mmCIF file.}
+\item{pdb}{pdb input: file path, or object from \code{bio3d::read.pdb()} or \code{bio3d::read.cif()}}
 
-\item{chain}{Character vector of chain IDs, or \code{"all"}. # REMOVED 5/4}
+\item{force_file_type}{optional character; override auto-detection.
+one of \code{"cif"} or \code{"pdb"}. default NULL = auto-detect by file extension.}
 }
 \value{
-A trimmed \code{bio3d} PDB object containing only selected chains.
+a \code{bio3d} pdb object with standardized atom table, including
+  an added \code{residue_id} column of the form "resno_chain_insert".
 }
 \description{
-Reads a PDB or CIF file and returns a trimmed structure for specified chains.
+reads a pdb or cif file (or an existing bio3d object) and returns a cleaned pdb
+object for downstream evo3d analysis. fixes missing insert codes, replaces
+illegal '+' characters, and appends a unique residue identifier column.
+}
+\details{
+
 }

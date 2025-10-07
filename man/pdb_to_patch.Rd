@@ -2,7 +2,7 @@
 % Please edit documentation in R/PDB_MODULE.R
 \name{pdb_to_patch}
 \alias{pdb_to_patch}
-\title{Extract Surface Patches from PDB}
+\title{extract surface patches from pdb}
 \usage{
 pdb_to_patch(
   pdb,
@@ -10,44 +10,69 @@ pdb_to_patch(
   interface_chain = NA,
   occlusion_chain = NA,
   distance_method = "all",
-  drop_incomplete_residue = T,
-  rsa.method = "rose",
-  patch.dist.cutoff = 15,
-  patch.rsa.cutoff = 0.1,
-  patch.sasa.cutoff = NA,
-  patch.only.exposed = T,
-  max.patch = NA,
-  interface.dist.cutoff = 5,
+  drop_incomplete_residue = TRUE,
+  rsa_method = "rose",
+  dist_cutoff = 15,
+  rsa_cutoff = 0.1,
+  sasa_cutoff = NA,
+  only_exposed_in_patch = TRUE,
+  use_rsa_sasa = "and",
+  max_patch = NA,
+  interface_dist_cutoff = 5,
   verbose = 1,
-  detail_level = 1
+  detail_level = 1,
+  force_file_type = NULL,
+  patch_mode = "justaholder"
 )
 }
 \arguments{
-\item{pdb}{A \code{bio3d} PDB object.}
+\item{pdb}{pdb input: file path, bio3d object, or standardized pdb}
 
-\item{chain}{Chain ID(s) or \code{"all"}.}
+\item{chain}{chain id(s) to analyze (default NA = all chains)}
 
-\item{distance_method}{One of \code{"all"}, \code{"ca"}, \code{"backbone"}, \code{"sidechain"}.}
+\item{interface_chain}{optional chain id(s) to define interface contacts}
 
-\item{drop_incomplete_residue}{Logical. Drop residues with incomplete backbone atoms.}
+\item{occlusion_chain}{optional chain id(s) used to occlude surface during accessibility calculation}
 
-\item{rsa.method}{Method for RSA normalization (e.g., \code{"rose"}).}
+\item{distance_method}{residue distance metric: one of "all", "ca", "backbone", "sidechain" (default "all")}
 
-\item{patch.dist.cutoff}{Max Å distance between residues in a patch.}
+\item{drop_incomplete_residue}{logical. drop residues missing backbone atoms (default TRUE)}
 
-\item{patch.rsa.cutoff}{RSA cutoff for defining patch centroids.}
+\item{rsa_method}{method for rsa normalization ("rose", "miller", "theoretical_tien", "empirical_tien")}
 
-\item{patch.sasa.cutoff}{Optional SASA cutoff for patch centroids.}
+\item{dist_cutoff}{numeric. maximum distance in angstroms for neighbors in patches (default 15)}
 
-\item{patch.only.exposed}{Logical, restrict patches to exposed residues.}
+\item{rsa_cutoff}{minimum rsa for defining seed residues (default 0.1)}
 
-\item{max.patch}{Optional max number of neighbors per patch.}
+\item{sasa_cutoff}{optional minimum sasa for seed residues}
 
-\item{pdb_path}{Path to a PDB or CIF file.}
+\item{only_exposed_in_patch}{logical. if TRUE, restricts patch members to exposed residues only (default TRUE)}
+
+\item{use_rsa_sasa}{logical operator for combining rsa and sasa cutoffs: "and" or "or" (default "and")}
+
+\item{max_patch}{optional maximum number of neighbors per patch}
+
+\item{interface_dist_cutoff}{maximum distance in angstroms for interface residue contacts (default 5)}
+
+\item{verbose}{integer. verbosity level (0 silent, >0 prints progress)}
+
+\item{detail_level}{controls return content: 0 = minimal, 1 = include chain, 2 = include distance matrix}
+
+\item{force_file_type}{optional. override auto-detection of pdb vs cif input}
+
+\item{patch_mode}{placeholder argument, not implemented}
 }
 \value{
-A list with \code{pdb}, \code{seq_set}, \code{residue_dist}, and \code{residue_df} (with patches).
+list with:
+\itemize{
+  \item \code{pdb} – NULL (object cached elsewhere)
+  \item \code{chain} – chain ids if \code{detail_level > 0}
+  \item \code{seq_set} – amino acid sequences per chain
+  \item \code{residue_dist} – residue–residue distance matrix if \code{detail_level > 1}
+  \item \code{residue_df} – data frame with residues, rsa/sasa values, exposure, and patch membership
+}
 }
 \description{
-High-level wrapper for computing sequences, distances, solvent accessibility, and patches from a PDB structure.
+high-level wrapper to compute sequences, residue distances,
+solvent accessibility, exposure, and surface patches from a pdb structure.
 }

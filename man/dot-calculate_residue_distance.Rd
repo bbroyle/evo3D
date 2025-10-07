@@ -8,21 +8,33 @@
   pdb,
   chain = NA,
   distance_method = "all",
-  in_module = F
+  in_module = FALSE
 )
 }
 \arguments{
-\item{pdb}{PDB object or NULL.}
+\item{pdb}{A PDB object from \code{bio3d}, or file path passed to
+\code{.standardize_pdb_input()} if \code{in_module = FALSE}.}
 
-\item{chain}{Chain ID(s).}
+\item{chain}{Optional character vector of chain IDs to retain. Default NA
+keeps all chains.}
 
-\item{distance_method}{One of \code{'all'}, \code{'ca'}, \code{'backbone'}, or \code{'sidechain'}.}
+\item{distance_method}{Character string, one of \code{"all"}, \code{"ca"},
+\code{"backbone"}, or \code{"sidechain"}. Controls which atoms are used for
+distance calculation. Default \code{"all"}.}
 
-\item{pdb_path}{Path to a PDB file.}
+\item{in_module}{Logical. If \code{TRUE}, assumes \code{pdb} has already been
+standardized (default \code{FALSE}).}
 }
 \value{
-A square numeric matrix of distances.
+A symmetric square numeric matrix of residue–residue distances,
+  with residue IDs as row and column names.
 }
 \description{
-Computes a pairwise distance matrix between residues based on 3D coordinates.
+Computes a pairwise Euclidean distance matrix between residues of a PDB structure.
+Distances are based on atom coordinates, grouped by residue, with options to
+restrict to backbone, sidechain, or Cα atoms.
 }
+\details{
+Called internally by patch-definition and exposure functions.
+}
+\keyword{internal}

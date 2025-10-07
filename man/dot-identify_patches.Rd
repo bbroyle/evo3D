@@ -2,36 +2,39 @@
 % Please edit documentation in R/PDB_MODULE.R
 \name{.identify_patches}
 \alias{.identify_patches}
-\title{Identify Surface Patches}
+\title{identify surface patches}
 \usage{
 .identify_patches(
   dist_mat,
-  accessibility_df,
-  rsa_cutoff = 0.1,
-  sasa_cutoff = NULL,
+  residue_df,
   dist_cutoff = 15,
-  max_patch = NULL,
-  only_exposed_in_patch = F
+  max_patch = NA,
+  only_exposed_in_patch = TRUE
 )
 }
 \arguments{
-\item{dist_mat}{A residue-residue distance matrix.}
+\item{dist_mat}{residue–residue distance matrix}
 
-\item{accessibility_df}{Data frame of residue accessibility values (e.g., from \code{calculate_accessibility}).}
+\item{residue_df}{data frame of residues with rsa, sasa, and exposure info}
 
-\item{rsa_cutoff}{Minimum RSA for centroid selection (default = 0.1).}
+\item{dist_cutoff}{numeric. maximum distance in angstroms for neighbors (default 15)}
 
-\item{sasa_cutoff}{Optional minimum SASA for centroid selection.}
+\item{max_patch}{numeric. optional maximum number of neighbors per patch (default NA = unlimited)}
 
-\item{dist_cutoff}{Maximum distance (in Å) for neighbors.}
-
-\item{max_patch}{Optional maximum number of neighbors per patch.}
-
-\item{only_exposed_in_patch}{If TRUE, restricts patch members to surface residues only.}
+\item{only_exposed_in_patch}{logical. if TRUE (default), restricts patch members to exposed residues only}
 }
 \value{
-Updated \code{accessibility_df} with a \code{patch} column listing neighbors.
+input \code{residue_df} with new columns:
+\itemize{
+  \item \code{patch} – string of neighbor residue ids joined by '+'
+  \item \code{patch_len} – number of residues in patch
+  \item \code{max_dist} – maximum pairwise distance among patch members
+}
 }
 \description{
-Defines residue patches around surface-exposed centroids based on RSA, SASA, and spatial distance.
+defines residue patches by growing neighborhoods around exposed seed residues
+using rsa, sasa, and spatial distance criteria. seeds are always taken from
+residues marked \code{exposed}; if cutoffs are set to 0, all residues qualify
+as seeds.
 }
+\keyword{internal}

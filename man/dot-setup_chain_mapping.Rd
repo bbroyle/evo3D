@@ -2,26 +2,27 @@
 % Please edit documentation in R/WRAPPER_MODULE.R
 \name{.setup_chain_mapping}
 \alias{.setup_chain_mapping}
-\title{Setup Chain Mapping for PDB–MSA Alignment}
+\title{setup chain mapping for pdb–msa alignment}
 \usage{
 .setup_chain_mapping(chain, chain_type = "main", pdb_count = 1, msa_count = 1)
 }
 \arguments{
-\item{chain}{Chain input; can be a character string, vector, or list (e.g. \code{"auto"}, \code{"all"}, \code{c("A", "B")}, or a list of vectors).}
+\item{chain}{character, vector, or list. chain input, e.g. "auto",
+"all", c("A","B"), or a list of vectors}
 
-\item{chain_type}{One of \code{"main"}, \code{"interface"}, or \code{"occlusion"}, determining the mapping logic.}
+\item{chain_type}{character. one of "main","interface","occlusion"}
 
-\item{pdb_count}{Total number of structural models.}
+\item{pdb_count}{integer. total number of pdbs (default 1)}
 
-\item{msa_count}{Number of MSAs per PDB (e.g. for homomultimers).}
+\item{msa_count}{integer. number of msas per pdb (default 1)}
 }
 \value{
-A named list of length \code{pdb_count}, where each element is a chain mapping vector or character.
+named list of length \code{pdb_count}, each entry a chain
+  mapping vector or character
 }
 \description{
-Standardizes chain input for main chains, interface chains, or occlusion chains across multiple PDBs and MSAs.
-}
-\details{
-This function ensures each PDB has an explicit chain mapping, even when user input is partial or symbolic (e.g. \code{"auto"}, \code{"all"}).
+standardizes chain input across pdbs and msas for main, interface,
+or occlusion chains. ensures every pdb has an explicit mapping even
+when user input is partial or symbolic (e.g. "auto", "all").
 }
 \keyword{internal}

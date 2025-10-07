@@ -2,27 +2,37 @@
 % Please edit documentation in R/ANALYSIS_UTILS.R
 \name{run_pegas_three}
 \alias{run_pegas_three}
-\title{Calculate Diversity and Neutrality Statistics for MSA Subsets}
+\title{calculate diversity and neutrality stats for msa subsets}
 \usage{
 run_pegas_three(msa, residue_df = NULL, stat = c("pi", "tajima", "hap"))
 }
 \arguments{
-\item{msa}{Either a single nucleotide alignment (matrix or DNAbin) or a named list of alignments (one per patch).}
+\item{msa}{single nucleotide alignment (matrix or DNAbin) or a named list
+of alignments, one per patch}
 
-\item{residue_df}{Optional data frame containing at minimum a column \code{msa_subset_id}.
-If provided, statistics will be merged into this data frame.}
+\item{residue_df}{optional data frame with column \code{msa_subset_id};
+if provided, statistics are merged into this data frame}
 
-\item{stat}{Character vector indicating which statistics to compute. Options: \code{"pi"}, \code{"tajima"}, \code{"hap"}.}
+\item{stat}{character vector of statistics to compute.
+options: \code{"pi"}, \code{"tajima"}, \code{"hap"} (default all)}
 }
 \value{
-A data frame with one row per alignment window (matching \code{msa_subset_id}),
-including columns for each requested statistic.
+data frame with one row per alignment window (\code{msa_subset_id}),
+  including requested columns:
+  \itemize{
+    \item \code{pi} – nucleotide diversity
+    \item \code{tajima} – tajima's d
+    \item \code{tajima_pnormal} – normal approximation p-value
+    \item \code{tajima_pbeta} – beta distribution p-value
+    \item \code{hap} – haplotype diversity
+  }
 }
 \description{
-Computes per-patch summary statistics for nucleotide alignments, including nucleotide diversity (\code{pi}),
-Tajima's D, and haplotype diversity. Accepts either a single MSA or a list of patch-level MSAs.
+computes nucleotide diversity (pi), tajima's d, and haplotype diversity
+on nucleotide alignments. accepts a single alignment or a list of
+patch-level alignments.
 }
 \details{
-This function is typically used downstream of \code{aln_msa_to_pdb()} to quantify evolutionary variation
-within each structure-informed alignment window.
+typically used downstream of \code{aln_msa_to_pdb()} to quantify
+variation within structure-informed windows.
 }

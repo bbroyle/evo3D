@@ -2,16 +2,18 @@
 % Please edit documentation in R/WRAPPER_MODULE.R
 \name{show_evo3d_defaults}
 \alias{show_evo3d_defaults}
-\title{Show Default evo3D Controls}
+\title{show default evo3D controls}
 \usage{
 show_evo3d_defaults(module_name = NULL)
 }
 \arguments{
-\item{module_name}{Optional string: one of "msa", "pdb", "aln", or "stat". If `NULL`, shows all.}
+\item{module_name}{character. one of "msa","pdb","aln","stat","output".
+if NULL (default) prints all}
 }
 \value{
-None. Prints output to console.
+none. prints to console
 }
 \description{
-Print default evo3D module control settings (MSA, PDB, alignment, statistics).
+prints the default evo3D control settings for one module
+or all modules if none specified
 }

@@ -2,24 +2,38 @@
 % Please edit documentation in R/ALN_MODULE.R
 \name{.extract_msa_subsets}
 \alias{.extract_msa_subsets}
-\title{Extract Codon-Aligned Nucleotide MSA Windows}
+\title{Extract Codon-Aligned Nucleotide Subsets Across Multiple MSAs}
 \usage{
-.extract_msa_subsets(msa, codon_patches)
+.extract_msa_subsets(msa_info, codon_patches, use_sample_names = TRUE)
 }
 \arguments{
-\item{msa}{A nucleotide multiple sequence alignment in matrix form (e.g., from \code{ape::as.DNAbin()}).}
+\item{msa_info}{A named list of MSA entries. Each entry must contain
+\code{msa_mat}, a nucleotide alignment matrix (samples × sites), usually
+from \code{ape::as.DNAbin()} or similar.}
 
-\item{codon_patches}{A data frame with \code{codon_patch} and \code{msa_subset_id} columns (from \code{.map_patches_to_codons()}).}
+\item{codon_patches}{Data frame with at least \code{codon_patch} and
+\code{msa_subset_id} columns, as produced by
+\code{.map_patches_to_codons()}. Codon patches are represented as
+“+”-delimited strings of codon indices, each suffixed by its MSA label
+(e.g., \code{"15_msa1+22_msa1+7_msa2"}).}
+
+\item{use_sample_names}{Logical; whether to collapse cross-MSA or cross-chain
+patches so that resulting subsets share the same FASTA identifiers.
+Default is \code{TRUE}.}
 }
 \value{
-A named list of nucleotide MSA subsets, each a matrix corresponding to one patch.
+A named list of nucleotide alignment subsets, one per patch. Each
+  element is a merged matrix (samples × nucleotides) containing the codons
+  drawn from one or more MSAs according to the patch definition.
 }
 \description{
-Subsets a nucleotide multiple sequence alignment based on codon-level patches
-derived from 3D structural neighborhoods. Each subset corresponds to a structural patch.
+Subsets one or more nucleotide multiple sequence alignments into
+codon-aligned windows corresponding to structural patches. Codon patches
+may reference multiple MSAs (e.g., \code{"1_msa1+2_msa1+1_msa2"}), in which
+case codons are extracted from each MSA separately and then merged.
 }
 \details{
-Assumes codon numbering starts at 1, with codon 1 = positions 1:3 in the MSA, codon 2 = 4:6, etc.
-Used internally to extract windows for diversity and selection analysis.
+Typically used after \code{.map_patches_to_codons()} to build
+nucleotide-level MSAs for patch-based diversity and selection analyses.
 }
 \keyword{internal}

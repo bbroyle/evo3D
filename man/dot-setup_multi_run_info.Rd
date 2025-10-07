@@ -2,26 +2,31 @@
 % Please edit documentation in R/WRAPPER_MODULE.R
 \name{.setup_multi_run_info}
 \alias{.setup_multi_run_info}
-\title{Setup evo3D Multi-Run Grid}
+\title{setup evo3D multi-run grid}
 \usage{
 .setup_multi_run_info(msa, pdb, chain, interface_chain, occlusion_chain)
 }
 \arguments{
-\item{msa}{A single MSA (file path, matrix, or fasta object) or a list of such inputs.}
+\item{msa}{single msa (file path, matrix, or fasta object) or list of such}
 
-\item{pdb}{A single PDB (bio3d object) or a list of PDBs.}
+\item{pdb}{single pdb (bio3d object) or list of pdbs}
 
-\item{chain}{Main chain(s) of interest. Can be a character, vector, or nested list (e.g. \code{"A"}, \code{c("A","B")}, or \code{list(c("A","B"), "C")}).}
+\item{chain}{main chains of interest. character, vector, or list
+(e.g. "A", c("A","B"), list(c("A","B"),"C"))}
 
-\item{interface_chain}{Chains to use for interface calculations. Can be \code{"all"}, a character vector, or list.}
+\item{interface_chain}{chains used for interface calculations. can be "all",
+character vector, or list}
 
-\item{occlusion_chain}{Chains to use for occlusion in RSA/SASA. Same input rules as \code{interface_chain}.}
+\item{occlusion_chain}{chains used for occlusion in rsa/sasa. same rules as
+interface_chain}
 }
 \value{
-A list with standardized inputs and a \code{run_grid} data frame detailing each MSA–PDB–chain combination.
+list with standardized msa, pdb, interface_chain, occlusion_chain,
+  and a run_grid data frame of msa–pdb–chain combinations
 }
 \description{
-Expands combinations of MSA and PDB inputs into a run grid for multi-model, multi-chain evo3D analyses.
-Automatically handles chain assignment and resolves homomultimer expansion where applicable.
+expands combinations of msa and pdb inputs into a run grid for multi-model,
+multi-chain evo3D analyses. handles main chain assignment and resolves
+homomultimer expansion where a chain string contains multiple ids.
 }
 \keyword{internal}

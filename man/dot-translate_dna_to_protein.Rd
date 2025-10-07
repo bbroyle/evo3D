@@ -2,18 +2,25 @@
 % Please edit documentation in R/MSA_MODULE.R
 \name{.translate_dna_to_protein}
 \alias{.translate_dna_to_protein}
-\title{Translate DNA to Amino Acids}
+\title{Translate dna to amino acids}
 \usage{
-.translate_dna_to_protein(seq)
+.translate_dna_to_protein(seq, frame = 0, sens = "F", numcode = 1)
 }
 \arguments{
-\item{seq}{A named character string representing a DNA sequence.}
+\item{seq}{a named character string dna sequence}
+
+\item{frame}{reading frame (0, 1, or 2). always fixed to 0 in full pipeline but retained here for flexibility}
+
+\item{sens}{translation sense ('F' forward, 'R' reverse). always fixed to 'F' in full pipeline}
+
+\item{numcode}{ncbi genetic code number to use (default 1, standard code)}
 }
 \value{
-A named character string representing the translated amino acid sequence.
+a named character string of the translated amino acid sequence
 }
 \description{
-Translates a DNA sequence to its corresponding amino acid sequence using the standard genetic code.
-Assumes the input sequence is in-frame and codons are contiguous. Gaps or ambiguous bases may result in 'X' or stop codons.
+translates a dna sequence to its amino acid sequence using \code{seqinr::translate}.
+ambiguous triplets (including gaps) are translated as 'X'.
+internal stop codons are reported with a message but translation continues.
 }
 \keyword{internal}

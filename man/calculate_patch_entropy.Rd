@@ -2,23 +2,25 @@
 % Please edit documentation in R/ANALYSIS_UTILS.R
 \name{calculate_patch_entropy}
 \alias{calculate_patch_entropy}
-\title{Calculate Mean Amino Acid Entropy per Patch}
+\title{calculate mean amino acid entropy per patch}
 \usage{
 calculate_patch_entropy(msa, residue_df = NULL, valid_aa_only = TRUE)
 }
 \arguments{
-\item{msa}{Either a single MSA (matrix) or a named list of nucleotide MSAs (one per patch).
-Each should be codon-aligned (i.e., divisible by 3 in width).}
+\item{msa}{single codon-aligned msa (matrix) or a named list of msas (one per patch)}
 
-\item{residue_df}{Optional data frame with \code{msa_subset_id}; if provided, entropy is merged in.}
+\item{residue_df}{optional data frame with column \code{msa_subset_id};
+if provided, results are merged into this data frame}
 
-\item{valid_aa_only}{Logical; if \code{TRUE}, only standard amino acids (no stop/X) are included in entropy calculation.}
+\item{valid_aa_only}{logical. if TRUE (default), restrict entropy to standard
+amino acids (ignores stop or X)}
 }
 \value{
-A data frame with one row per patch (matching \code{msa_subset_id}), including a new column \code{patch_entropy}.
+data frame with one row per patch (\code{msa_subset_id}),
+  including column \code{patch_entropy}
 }
 \description{
-Translates codon-aligned nucleotide MSAs to amino acids and computes mean Shannon entropy
-across all codon positions within each patch. This summarizes the overall amino acid diversity
-of each structural window.
+translates codon-aligned nucleotide msas to amino acids and computes mean
+shannon entropy across codon positions in each patch. this summarizes
+amino acid diversity within structure-defined windows.
 }

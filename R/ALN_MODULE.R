@@ -1,24 +1,120 @@
-# ------------------------------------------ #
-# ALN_MODULE.R
-# utilities and module for aligning msa to pdb
-# module (wrapper) is at the end of this script
-# Brad Broyles
-# ------------------------------------------ #
+# --------------------------------------------------------------- #
+# ALN MODULE — align msa to pdb and derive codon-level windows
+# internal .functions() are wrapped by exported aln_msa_to_pdb()
+#
+# NOTES:
+# 1. alignment uses msa::msa(…, method = "ClustalOmega", type = "protein")
+#    default sub matrix BLOSUM65; order = "input"
+# 2. mismatches are computed on aa-to-aa positions only (ignores '-' and 'X')
+# 3. .map_aln_to_positions() overlays indices:
+#    ref codon positions and pdb residue_ids are added as extra columns
+# 4. patches are converted to codon ids via .map_patches_to_codons()
+#    codon_id format: "<codon>_<msaLabel>"; patch strings are '+'-delimited
+# 5. gap-map handling:
+#    - if a residue aligns to '-', it is considered gap-mapped
+#    - drop_gap_map = TRUE removes gap-centered patches and prunes gap members
+# 6. cleanup/rebuild step:
+#    .fix_gap_map_and_dedup_codons() deduplicates codons and, when max_patch is set,
+#    rebuilds patches from nearest valid residues using pdb_info$residue_dist
+#    (optional dist_cutoff and only_exposed_in_patch respected)
+# 7. patch modes:
+#    - "codon": size/uniqueness tracked at codon level
+#    - "residue": size built on residues, codons assigned afterward
+# 8. interfaces:
+#    residue_ids beginning with "interface" are held out during rebuild
+#    and reattached unchanged at the end
+# 9. multi-MSA support:
+#    patches may span multiple MSAs (e.g., "1_msa1+2_msa1+1_msa2");
+#    subsets are extracted per MSA and cbind()-merged
+# 10. outputs:
+#    - coverage: per-run alignment metadata (no aln matrix)
+#    - aln_df: residue ↔ codon mapping with patch/codon strings and metadata
+#    - msa_subsets: nucleotide windows per patch (samples × nucleotides)
+#
+# email: bbroyle@purdue.edu
+# --------------------------------------------------------------- #
+
+# .auto_detect_chain() ----
+
+#' auto detect matching pdb chain
+#'
+#' compare a peptide sequence to each chain in a pdb structure
+#' and return similarity scores based on k-mer coverage.
+#' higher scores indicate closer matches between the query sequence and pdb chain.
+#'
+#' @param pep amino acid sequence as a single character string
+#' @param pdb pdb structure input. can be a file path to a pdb, a pdb object
+#'   from \code{bio3d::read.pdb()}, or a standardized pdb from \code{standardize_pdb_input()}.
+#'   cannot be a pdb id alone.
+#' @param k integer k-mer size used for coverage calculation (default 4)
+#' @param in_module logical, for internal use. if TRUE, skips pdb validation
+#'   (default FALSE)
+#'
+#' @return a named numeric vector of k-mer coverage values for each pdb chain,
+#' sorted in descending order. names correspond to pdb chain identifiers.
+#'
+#' @details
+#' coverage is defined as the fraction of pdb k-mers also present in the peptide sequence.
+#'
+#' @seealso \code{\link{find_matching_structures}}, \code{\link{standardize_pdb_input}},
+#'   \code{bio3d::read.pdb}
+#'
+#' @examples
+#' \dontrun{
+#' pep <- "MKTFFVAGVILLLVATATGVHS"
+#' pdb <- standardize_pdb_input("my_structure.pdb")
+#' auto_detect_chain(pep, pdb)
+#' }
+#'
+#' @export
+
+
+.auto_detect_chain = function(pep, pdb, k = 4, in_module = F){
+
+  # Changed to coverage instead of jaccard
+  kmer_coverage <- function(pdb_seq, msa_seq) {
+    # seq is too short for kmer - just return 0
+    if (nchar(pdb_seq) < k || nchar(msa_seq) < k) return(0)
+
+    pdb_kmers <- substring(pdb_seq, 1:(nchar(pdb_seq) - k + 1), k:(nchar(pdb_seq)))
+    msa_kmers <- substring(msa_seq, 1:(nchar(msa_seq) - k + 1), k:(nchar(msa_seq)))
+
+    # What fraction of PDB kmers are found in MSA?
+    return(length(intersect(pdb_kmers, msa_kmers)) / length(pdb_kmers))
+  }
+
+  # if not in module validate pdb (handled in .get_pdb_sequences()) #
+  seq_set = .get_pdb_sequence(pdb, in_module = in_module)
+
+  dist = sapply(seq_set, function(x) kmer_coverage(x, pep))
+
+  # sort by descending order and return
+  dist = sort(dist, decreasing = T)
+
+  return(dist)
+}
+
 
 # .calculate_coverage() ----
 
 #' Calculate Aligned Coverage Ranges
 #'
-#' Identifies contiguous non-gap regions in each sequence of an alignment matrix and formats them as range strings.
-#' Optionally includes ranges of mismatched positions between aligned sequences.
+#' Identifies contiguous non-gap regions in each sequence of an alignment matrix
+#' and formats them as start:end ranges. Optionally summarizes contiguous runs
+#' of mismatch positions across the alignment.
 #'
-#' Called by \code{.align_sequences()}.
+#' Called internally by \code{.align_sequences()}.
 #'
-#' @param aln_mat A character matrix representing a sequence alignment (rows = sequences, columns = positions).
-#' @param mismatch Optional numeric vector of mismatch positions to summarize (e.g., from sequence comparison).
+#' @param aln_mat A character matrix representing a sequence alignment
+#'   (rows = sequences, columns = positions).
+#' @param mismatch Optional numeric vector of mismatch positions to summarize.
+#'   If not supplied or empty, the returned \code{mismatch} element is \code{NA}.
 #'
-#' @return A named list. Each element is a character vector of ranges for a sequence (e.g., \code{"5:25"}), plus an optional \code{mismatch} element.
+#' @return A named list. Each element corresponds to one sequence, containing a
+#'   character vector of ranges (e.g., \code{"5:25"}). Includes an additional
+#'   element \code{mismatch} if mismatches were provided.
 #' @keywords internal
+
 .calculate_coverage = function(aln_mat, mismatch) {
   covered_regions = list()
 
@@ -72,23 +168,31 @@
 
 # .align_sequences() ----
 
-#' Align Reference and PDB Sequences
+#' Align Reference and Structure Sequences
 #'
-#' Aligns a pair of amino acid sequences using ClustalOmega (via the \pkg{msa} package),
-#' computes positional mismatches, and summarizes coverage across the alignment.
+#' Aligns a reference amino acid sequence against a structure-derived sequence
+#' using ClustalOmega (via the \pkg{msa} package, default BLOSUM65). Computes
+#' positional mismatches and summarizes aligned coverage ranges.
 #'
-#' Used internally to align MSA or PDB-derived sequences to a reference
+#' Intended for internal use in mapping reference sequences to PDB-derived
+#' sequences prior to downstream patch analyses.
 #'
-#' @param sequences A named character vector of two protein sequences: the reference first, the structure-derived second.
-#' @param user_supplied_alignment Placeholder for pre-aligned input (currently unused).
+#' @param sequences A named character vector of length two, containing the
+#'   reference sequence first and the structure-derived sequence second.
+#'   Example: \code{c(ref = "MKT...", pdb = "MK-...")}.
+#' @param user_supplied_alignment Reserved for future use. Currently ignored.
 #'
-#' @return A list with elements:
+#' @return A list with components:
 #' \describe{
-#'   \item{aln_mat}{Character matrix of aligned sequences.}
-#'   \item{coverage}{Named list of coverage ranges for each sequence.}
+#'   \item{aln_mat}{A two-column character matrix with aligned reference and
+#'     structure sequences.}
+#'   \item{coverage}{Named list of coverage ranges (see
+#'     \code{.calculate_coverage}). Includes mismatch ranges if applicable.}
 #' }
-#' @export
-.align_sequences = function(sequences, user_supplied_alignment = NULL){
+#' @seealso \code{.calculate_coverage}
+#' @keywords internal\
+
+.align_sequences = function(sequences, user_supplied_alignment = NA){
 
   # user_supplied_alignment not supported yet -- soon #
 
@@ -138,22 +242,30 @@
   ))
 }
 
-# 6/17/25 -- try wrapping msa::msa with invisible() to hide message "gonnet"
-
 # .map_aln_to_positions() ----
 
-#' Map Aligned Amino Acid Positions to Nucleotide Positions
+#' Map Alignment Columns to Codon and Residue Indices
 #'
-#' Overlays alignment columns with residue-level and codon-level position indices for downstream
-#' mapping of structural patches to nucleotide-level coordinates.
+#' Annotates an alignment matrix by overlaying reference codon positions and
+#' PDB residue indices onto aligned amino acids. This preserves the aligned
+#' sequence characters while adding positional context for downstream mapping.
 #'
-#' Typically used after \code{.align_sequences()} and \code{identify_patches()} to annotate alignment matrix rows.
+#' Typically used after \code{.align_sequences()} and \code{identify_patches()}
+#' to connect reference codons with structure-derived residues.
 #'
-#' @param aln_mat A character matrix from \code{.align_sequences()}, with two rows: reference and structure-derived.
-#' @param residue_df Data frame of patch or interface residues, typically from \code{identify_patches()}.
-#' @param chain Optional chain ID string (or vector) to restrict mapping to a subset of chains.
+#' @param aln_mat A character matrix returned by \code{.align_sequences()},
+#'   with two rows (reference and structure-derived sequences).
+#' @param residue_df Data frame of patch or interface residues, such as that
+#'   returned by \code{identify_patches()}, containing at least
+#'   \code{residue_id} and \code{orig_chain}.
+#' @param chain Optional chain identifier (string or vector). If supplied,
+#'   restricts mapping to residues belonging to the given chain(s).
 #'
-#' @return Modified \code{aln_mat} with alignment positions replaced by codon and PDB residue indices.
+#' @return A modified character matrix with additional columns:
+#' \describe{
+#'   \item{codon}{Reference codon indices for aligned positions.}
+#'   \item{residue_id}{PDB residue indices aligned to the structure sequence.}
+#' }
 #' @keywords internal
 
 .map_aln_to_positions = function(aln_mat, residue_df, chain = NA){
@@ -189,29 +301,47 @@
   return(aln_mat)
 }
 
-
-
 # .map_patches_to_codons() ----
 
-#' Map Protein Patch Regions to Codon Coordinates
+#' Convert Residue Patches to Codon-Based Coordinates
 #'
-#' Converts patch-level residue groupings (e.g., structural surface patches) into codon-aligned nucleotide coordinates
-#' based on a dual-layer alignment matrix produced by \code{.map_aln_to_positions()}.
+#' Maps structural patch definitions from residue space into codon-aligned
+#' coordinates, using a MSA-PDB alignment table from
+#' \code{.map_aln_to_positions()}. This produces codon-based patch identifiers
+#' that can be used for downstream nucleotide-level extraction.
 #'
-#' This function creates \code{codon_patch} strings for each residue, encoding the codons that make up its structural context.
-#' Also assigns a unique \code{msa_subset_id} used for downstream patch extraction.
+#' Each residue inherits codon patch membership, with options to remove
+#' gap-mapped residues. When gaps are dropped, both gap-seeded patches and
+#' membership of gap residues in other patches are removed. If a residue
+#' distance matrix is supplied, \code{max_dist} is recalculated after
+#' gap-removal.
 #'
-#' @param pos_aln A 2-row alignment matrix with codon indices (row 1) and residue indices (row 2), from \code{.map_aln_to_positions()}.
-#' @param residue_df Data frame of patch-level residues, containing at minimum \code{residue_id} and \code{patch} columns.
+#' @param aln_table Alignment table from \code{.map_aln_to_positions()},
+#'   containing at least columns \code{codon}, \code{msa}, \code{pdb},
+#'   \code{residue_id}, \code{ref_aa}, and \code{pdb_aa}.
+#' @param residue_df Data frame of patch-level residues (e.g. from
+#'   \code{pdb_to_patch()}), with columns including \code{residue_id},
+#'   \code{patch}, \code{patch_len}, \code{exposed}, and \code{max_dist}.
+#' @param drop_gap_map Logical; whether to drop gap-mapped residues. If
+#'   \code{TRUE} (default), patches centered on gap residues are removed,
+#'   and gap residues are excluded from other patches.
+#' @param dist_mat Optional residue–residue distance matrix (from
+#'   \code{pdb_to_patch()}). If supplied and \code{drop_gap_map = TRUE},
+#'   \code{max_dist} is updated after gap removal.
 #'
-#' @return A data frame matching residues to codon-based patch identifiers, with columns:
-#' \describe{
-#'   \item{residue_id}{PDB residue identifier}
-#'   \item{codon}{Codon position in the alignment}
-#'   \item{codon_patch}{Codon-based patch identifier (e.g., "15+22+27")}
-#'   \item{msa_subset_id}{Unique ID used to extract the corresponding MSA subset}
-#' }
+#' @return A data frame aligning residues with codon-based patch information,
+#'   including:
+#'   \describe{
+#'     \item{codon_id}{Codon identifier string (e.g. \code{"15_msa1"}).}
+#'     \item{codon_patch}{“+”-delimited string of codon IDs making up the patch.}
+#'     \item{codon_len}{Number of codons in the patch.}
+#'     \item{unique_codon}{Number of unique codons represented.}
+#'     \item{gap_map_count}{Number of gap-mapped residues removed from the patch.}
+#'     \item{patch, patch_len}{Residue-based patch membership (cleaned).}
+#'     \item{exposed, max_dist}{Exposure and distance metadata (updated if applicable).}
+#'   }
 #' @keywords internal
+
 .map_patches_to_codons = function(aln_table, residue_df, drop_gap_map = TRUE, dist_mat = NA){
 
   # in aln_msa_to_pdb() always drop gap map #
@@ -319,21 +449,22 @@
   return(aln_table)
 }
 
-# .extract_msa_subsets() ----
+# .extract_msa_subsets_single() ----
 
-#' Extract Codon-Aligned Nucleotide MSA Windows
+#' Extract a Codon-Aligned Subset from a single MSA
 #'
-#' Subsets a nucleotide multiple sequence alignment based on codon-level patches
-#' derived from 3D structural neighborhoods. Each subset corresponds to a structural patch.
+#' Internal helper to \code{.extract_msa_subsets()}. Converts codon indices
+#' (without MSA labels) into nucleotide positions (3 bases per codon) and
+#' subsets a single MSA accordingly.
 #'
-#' Assumes codon numbering starts at 1, with codon 1 = positions 1:3 in the MSA, codon 2 = 4:6, etc.
-#' Used internally to extract windows for diversity and selection analysis.
+#' @param msa A nucleotide alignment matrix (samples × sites).
+#' @param codon_patches Data frame with \code{msa_subset_id} and
+#'   \code{codon_patch} (a “+”-delimited string of codon indices).
 #'
-#' @param msa A nucleotide multiple sequence alignment in matrix form (e.g., from \code{ape::as.DNAbin()}).
-#' @param codon_patches A data frame with \code{codon_patch} and \code{msa_subset_id} columns (from \code{.map_patches_to_codons()}).
-#'
-#' @return A named list of nucleotide MSA subsets, each a matrix corresponding to one patch.
+#' @return A list of one or more nucleotide MSA subsets, each labeled by
+#'   \code{msa_subset_id}.
 #' @keywords internal
+
 .extract_msa_subsets_single = function(msa, codon_patches){
   # works across MSA's #
   # drop patches that dont have codon positions #
@@ -364,6 +495,35 @@
   # return list of subsets #
   return(msa_subset)
 }
+
+# .extract_msa_subsets() ----
+
+#' Extract Codon-Aligned Nucleotide Subsets Across Multiple MSAs
+#'
+#' Subsets one or more nucleotide multiple sequence alignments into
+#' codon-aligned windows corresponding to structural patches. Codon patches
+#' may reference multiple MSAs (e.g., \code{"1_msa1+2_msa1+1_msa2"}), in which
+#' case codons are extracted from each MSA separately and then merged.
+#'
+#' Typically used after \code{.map_patches_to_codons()} to build
+#' nucleotide-level MSAs for patch-based diversity and selection analyses.
+#'
+#' @param msa_info A named list of MSA entries. Each entry must contain
+#'   \code{msa_mat}, a nucleotide alignment matrix (samples × sites), usually
+#'   from \code{ape::as.DNAbin()} or similar.
+#' @param codon_patches Data frame with at least \code{codon_patch} and
+#'   \code{msa_subset_id} columns, as produced by
+#'   \code{.map_patches_to_codons()}. Codon patches are represented as
+#'   “+”-delimited strings of codon indices, each suffixed by its MSA label
+#'   (e.g., \code{"15_msa1+22_msa1+7_msa2"}).
+#' @param use_sample_names Logical; whether to collapse cross-MSA or cross-chain
+#'   patches so that resulting subsets share the same FASTA identifiers.
+#'   Default is \code{TRUE}.
+#'
+#' @return A named list of nucleotide alignment subsets, one per patch. Each
+#'   element is a merged matrix (samples × nucleotides) containing the codons
+#'   drawn from one or more MSAs according to the patch definition.
+#' @keywords internal
 
 .extract_msa_subsets = function(msa_info, codon_patches, use_sample_names = TRUE){
   # works across MSA's #
@@ -416,6 +576,47 @@
 
 
 # .fix_gap_map_and_dedup_codons ----
+
+#' Fix Gap-Mapped Residues and Deduplicate Codons in Patches
+#'
+#' Cleans and rebuilds patch definitions by removing gap-mapped residues and
+#' ensuring codons are not duplicated within codon-based patches. When a maximum
+#' patch size (\code{max_patch}) is specified, patches are rebuilt from the
+#' residue distance matrix to satisfy size constraints.
+#'
+#' Behavior depends on \code{patch_mode}:
+#' \itemize{
+#'   \item In \code{"codon"} mode, codons within each \code{codon_patch} are
+#'   deduplicated. If \code{max_patch} is set, patches smaller than the target
+#'   are rebuilt using nearest valid codons until the limit is reached.
+#'   \item In \code{"residue"} mode, patches are rebuilt at the residue level,
+#'   with codons reassigned from residue membership.
+#' }
+#'
+#' Interface residues (with IDs beginning \code{"interface"}) are held out and
+#' reattached after processing.
+#'
+#' @param residue_df Data frame of patch-level residues, typically from
+#'   \code{.map_patches_to_codons()}, with columns \code{residue_id},
+#'   \code{patch}, \code{codon_patch}, \code{codon}, \code{pdb_aa},
+#'   \code{patch_len}, \code{codon_len}, \code{unique_codon}, and
+#'   \code{exposed}.
+#' @param patch_mode Either \code{"codon"} or \code{"residue"}, indicating how
+#'   patches are rebuilt and deduplicated.
+#' @param dist_cutoff Numeric; optional maximum residue–residue distance used
+#'   when rebuilding patches. Distances greater than this are excluded.
+#' @param max_patch Integer; maximum allowed patch size. If \code{NA}, no patch
+#'   rebuilding is performed.
+#' @param pdb_info PDB metadata list containing at least \code{residue_dist}, a
+#'   residue–residue distance matrix.
+#' @param only_exposed_in_patch Logical; whether only exposed residues can be
+#'   included when rebuilding patches.
+#'
+#' @return The input \code{residue_df} with updated patch definitions. Columns
+#'   \code{patch}, \code{patch_len}, \code{codon_patch}, \code{codon_len}, and
+#'   \code{unique_codon} are rebuilt as needed. Interface residues are preserved
+#'   and reattached unchanged.
+#' @keywords internal
 
 .fix_gap_map_and_dedup_codons = function(residue_df, patch_mode, dist_cutoff,
                                     max_patch, pdb_info, only_exposed_in_patch) {
@@ -544,27 +745,69 @@
 }
 # aln_msa_to_pdb() ----
 
-#' Align Protein Structure to MSA and Extract Codon-Level Windows
+#' Align Structure to Reference MSA and Generate Codon-Level Windows
 #'
-#' Module for aligning a structure-derived protein sequence to the reference sequence in a multiple
-#' sequence alignment (MSA), mapping 3D patches to codon-level positions, and extracting corresponding
-#' nucleotide windows. This forms the bridge between structure and sequence in the evo3D pipeline.
+#' Aligns a structure-derived protein sequence to the reference sequence in one
+#' or more nucleotide MSAs, maps structural patches to codon positions, and
+#' extracts corresponding nucleotide windows. This function links 3D structure
+#' to sequence diversity by chaining together multiple submodules:
+#' \enumerate{
+#'   \item Sequence alignment of PDB vs. MSA reference (\code{.align_sequences()}).
+#'   \item Mapping aligned positions to codon and residue indices
+#'         (\code{.map_aln_to_positions()}).
+#'   \item Converting structural patches to codon-level definitions
+#'         (\code{.map_patches_to_codons()}).
+#'   \item Optional patch cleanup: gap-map removal and codon deduplication
+#'         (\code{.fix_gap_map_and_dedup_codons()}).
+#'   \item Extraction of nucleotide MSA subsets for each patch
+#'         (\code{.extract_msa_subsets()}).
+#' }
 #'
-#' This function is a core module in the evo3D workflow and is called internally by \code{run_evo3d()}.
-#' It chains together multiple submodules to produce codon-aligned MSA subsets for each structural patch.
+#' This is the core alignment module in the evo3D workflow and is called
+#' internally by \code{run_evo3d()}.
 #'
-#' @param msa_info A named list output from \code{WRAPPER_msa_to_ref()}, containing the MSA matrix and reference peptide sequence.
-#' @param pdb_info A named list output from \code{WRAPPER_pdb_to_patch()}, including PDB-derived sequences and residue/patch annotations.
-#' @param chain Character string indicating the chain to analyze. Required.
-#' @param drop_unused_residues Logical; if \code{TRUE}, drops PDB residues not linked to codon-level info.
+#' @param msa_info A named list from \code{msa_to_ref()}, containing
+#'   at least \code{msa_mat} (nucleotide MSA matrix) and \code{pep}
+#'   (reference peptide sequence).
+#' @param pdb_info A named list from \code{WRAPPER_pdb_to_patch()}, including
+#'   \code{seq_set} (PDB-derived peptide sequences), \code{residue_df}
+#'   (residue/patch annotations), and \code{residue_dist} (residue distance
+#'   matrix).
+#' @param chain Character string specifying the PDB chain to analyze. Ignored if
+#'   \code{run_grid} is provided.
+#' @param subset_msa Logical; if \code{TRUE}, nucleotide MSA subsets are
+#'   extracted for each patch. Default \code{TRUE}.
+#' @param verbose Integer; level of console reporting. Default \code{1}.
+#' @param run_grid Optional data frame specifying combinations of MSA, PDB, and
+#'   chain to process. If supplied, overrides \code{chain}.
+#' @param drop_gap_map Logical; if \code{TRUE}, drops patches centered on
+#'   gap-mapped residues. Default \code{TRUE}.
+#' @param fix_gap_map_and_dedup_codons Logical; if \code{TRUE}, calls
+#'   \code{.fix_gap_map_and_dedup_codons()} to remove gap residues from patch
+#'   membership and ensure codon deduplication. Default \code{TRUE}.
+#' @param patch_mode Either \code{"codon"} or \code{"residue"}, controlling
+#'   how patches are deduplicated and rebuilt.
+#' @param max_patch Integer; maximum patch size. If \code{NA}, patches are
+#'   variable-length.
+#' @param dist_cutoff Numeric; maximum residue–residue distance when expanding
+#'   patches. Default \code{NULL} (no cutoff).
+#' @param only_exposed_in_patch Logical; if \code{TRUE}, restricts patch
+#'   rebuilding to exposed residues only.
+#' @param merge_type Character; strategy for merging overlapping patches.
+#'   Typically \code{"hold"}. Reserved for internal use.
+#' @param merge_exposure Character; strategy for merging exposure information.
+#'   Typically \code{"hold"}. Reserved for internal use.
 #'
-#' @return A list with:
+#' @return A list with three components:
 #' \describe{
-#'   \item{aln_coverage}{Named list of alignment coverage ranges.}
-#'   \item{aln_df}{Data frame mapping residues to codons, amino acids, and patch identifiers.}
-#'   \item{msa_subsets}{Named list of nucleotide MSA matrices, one per patch.}
+#'   \item{coverage}{List of alignment metadata for each MSA–PDB–chain run.}
+#'   \item{aln_df}{Data frame mapping residues to codons, amino acids, and patch
+#'         identifiers, after gap/deduplication cleanup.}
+#'   \item{msa_subsets}{Named list of nucleotide MSA matrices, one per patch
+#'         (if \code{subset_msa = TRUE}).}
 #' }
 #' @export
+
 aln_msa_to_pdb = function(msa_info, pdb_info, chain = 'auto',
                            subset_msa = TRUE,
                            verbose = 1,

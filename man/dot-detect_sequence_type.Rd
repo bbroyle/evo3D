@@ -4,19 +4,24 @@
 \alias{.detect_sequence_type}
 \title{Detect Sequence Type}
 \usage{
-.detect_sequence_type(seq, threshold = 0.9, max_len = 100)
+.detect_sequence_type(
+  seq,
+  detect_sequence_threshold = 0.8,
+  detect_sequence_len = 100
+)
 }
 \arguments{
-\item{seq}{A character string representing a single biological sequence.}
+\item{seq}{a character string representing a single biological sequence}
 
-\item{threshold}{Proportion of characters that must be nucleotide-like (A, T, C, G, N, U, -) to classify the sequence as \code{"nucleotide"}. Default is 0.9.}
+\item{detect_sequence_threshold}{proportion of characters that must be nucleotide-like (A, T, C, G) to classify the sequence as \code{"nucleotide"}. default is 0.8}
 
-\item{max_len}{Maximum number of characters (from the start of the sequence) to consider when computing the proportion. Default is 100.}
+\item{detect_sequence_len}{maximum number of non-gap '-' or 'X' characters (from the start of the sequence) to consider when computing the proportion. default is 100}
 }
 \value{
-A string: either \code{"nucleotide"} or \code{"protein"}.
+a string: either \code{"nucleotide"} or \code{"protein"}
 }
 \description{
-Heuristically determines whether a given sequence is nucleotide or protein based on the proportion of standard nucleotide characters in the first \code{max_len} positions.
+determines whether a given sequence is nucleotide or protein based on the proportion of standard nucleotide characters in the first \code{detect_sequence_len} positions.
+characters '-' and 'X' are dropped because they do not add information about either sequence type
 }
 \keyword{internal}

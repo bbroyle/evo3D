@@ -63,16 +63,18 @@
 
 # .setup_controls ----
 
-#' Validate and Merge Control Lists
+#' validate and merge control lists
 #'
-#' Internal helper to merge user-provided control lists with defaults, warning on unrecognized keys.
+#' internal helper to merge user-supplied control parameters with defaults.
+#' unknown keys stop with an error so unwanted arguments do not pass through.
 #'
-#' @param user_controls A named list of user-supplied parameters.
-#' @param default_controls A named list of default parameters.
-#' @param module_name Optional string for messaging context.
+#' @param user_controls named list of user-supplied parameters
+#' @param module_name character. module context used to select defaults
+#'   (one of "msa","pdb","aln","stat","output")
 #'
-#' @return A list combining defaults and valid user entries.
+#' @return named list of controls, with defaults updated by valid user entries
 #' @keywords internal
+
 .setup_controls = function(user_controls, module_name = "") {
 
   # switch default based on module name ----
@@ -104,13 +106,17 @@
 
 # .show_evo3d_defaults ----
 
-#' Show Default evo3D Controls
+#' show default evo3D controls
 #'
-#' Print default evo3D module control settings (MSA, PDB, alignment, statistics).
+#' prints the default evo3D control settings for one module
+#' or all modules if none specified
 #'
-#' @param module_name Optional string: one of "msa", "pdb", "aln", or "stat". If `NULL`, shows all.
-#' @return None. Prints output to console.
+#' @param module_name character. one of "msa","pdb","aln","stat","output".
+#'   if NULL (default) prints all
+#'
+#' @return none. prints to console
 #' @export
+
 show_evo3d_defaults = function(module_name = NULL){
   # module options #
   modules = c("msa", "pdb", "aln", "stat", "output")
@@ -140,20 +146,22 @@ show_evo3d_defaults = function(module_name = NULL){
 
 # .setup_chain_mapping ----
 
-# handle run grid set ups
-#' Setup Chain Mapping for PDB–MSA Alignment
+#' setup chain mapping for pdb–msa alignment
 #'
-#' Standardizes chain input for main chains, interface chains, or occlusion chains across multiple PDBs and MSAs.
+#' standardizes chain input across pdbs and msas for main, interface,
+#' or occlusion chains. ensures every pdb has an explicit mapping even
+#' when user input is partial or symbolic (e.g. "auto", "all").
 #'
-#' This function ensures each PDB has an explicit chain mapping, even when user input is partial or symbolic (e.g. \code{"auto"}, \code{"all"}).
+#' @param chain character, vector, or list. chain input, e.g. "auto",
+#'   "all", c("A","B"), or a list of vectors
+#' @param chain_type character. one of "main","interface","occlusion"
+#' @param pdb_count integer. total number of pdbs (default 1)
+#' @param msa_count integer. number of msas per pdb (default 1)
 #'
-#' @param chain Chain input; can be a character string, vector, or list (e.g. \code{"auto"}, \code{"all"}, \code{c("A", "B")}, or a list of vectors).
-#' @param chain_type One of \code{"main"}, \code{"interface"}, or \code{"occlusion"}, determining the mapping logic.
-#' @param pdb_count Total number of structural models.
-#' @param msa_count Number of MSAs per PDB (e.g. for homomultimers).
-#'
-#' @return A named list of length \code{pdb_count}, where each element is a chain mapping vector or character.
+#' @return named list of length \code{pdb_count}, each entry a chain
+#'   mapping vector or character
 #' @keywords internal
+
 .setup_chain_mapping = function(chain, chain_type = 'main', pdb_count = 1, msa_count = 1) {
   # Input validation
   if (!chain_type %in% c('main', 'interface', 'occlusion')) {
@@ -304,19 +312,25 @@ show_evo3d_defaults = function(module_name = NULL){
 
 # .setup_multi_run_info ----
 
-#' Setup evo3D Multi-Run Grid
+#' setup evo3D multi-run grid
 #'
-#' Expands combinations of MSA and PDB inputs into a run grid for multi-model, multi-chain evo3D analyses.
-#' Automatically handles chain assignment and resolves homomultimer expansion where applicable.
+#' expands combinations of msa and pdb inputs into a run grid for multi-model,
+#' multi-chain evo3D analyses. handles main chain assignment and resolves
+#' homomultimer expansion where a chain string contains multiple ids.
 #'
-#' @param msa A single MSA (file path, matrix, or fasta object) or a list of such inputs.
-#' @param pdb A single PDB (bio3d object) or a list of PDBs.
-#' @param chain Main chain(s) of interest. Can be a character, vector, or nested list (e.g. \code{"A"}, \code{c("A","B")}, or \code{list(c("A","B"), "C")}).
-#' @param interface_chain Chains to use for interface calculations. Can be \code{"all"}, a character vector, or list.
-#' @param occlusion_chain Chains to use for occlusion in RSA/SASA. Same input rules as \code{interface_chain}.
+#' @param msa single msa (file path, matrix, or fasta object) or list of such
+#' @param pdb single pdb (bio3d object) or list of pdbs
+#' @param chain main chains of interest. character, vector, or list
+#'   (e.g. "A", c("A","B"), list(c("A","B"),"C"))
+#' @param interface_chain chains used for interface calculations. can be "all",
+#'   character vector, or list
+#' @param occlusion_chain chains used for occlusion in rsa/sasa. same rules as
+#'   interface_chain
 #'
-#' @return A list with standardized inputs and a \code{run_grid} data frame detailing each MSA–PDB–chain combination.
+#' @return list with standardized msa, pdb, interface_chain, occlusion_chain,
+#'   and a run_grid data frame of msa–pdb–chain combinations
 #' @keywords internal
+
 .setup_multi_run_info = function(msa, pdb, chain, interface_chain, occlusion_chain){
 
   # goal is to setup run grid and return msa/pdb/chain/interface_chain/occlusion_chain objects #
@@ -392,25 +406,21 @@ show_evo3d_defaults = function(module_name = NULL){
 
 }
 
-
-
 # .safe_save ----
-#' Safely Resolve a Non-Clashing Output Path
+
+#' safely resolve non-clashing output path
 #'
-#' Avoids overwriting files/directories by appending numeric suffixes.
-#' If no safe name is found, uses a fallback with a consistent timestamp.
+#' avoids overwriting by appending a numeric or timestamp tag.
+#' returns a safe path for saving a file or directory
 #'
-#' @param path Character. Desired path.
-#' @param is_dir Logical. Is it a directory?
-#' @param max_tries Integer. How many numbered attempts before fallback to POSIXct timestamp
-#' @param tag Character. Optional tag to append to the path.
+#' @param path character. desired path
+#' @param is_dir logical. if TRUE, treat as directory (default FALSE)
 #'
-#' @return A list with:
-#'   \item{path}{Safe file path}
-#'   \item{systime}{Used timestamp (in fallback or NULL if not used)}
-#'
+#' @return list with
+#'   \item{path}{safe path string}
+#'   \item{tag}{timestamp tag if fallback used, NULL otherwise}
 #' @keywords internal
-#' @keywords internal
+#
 .safe_save <- function(path, is_dir = FALSE) {
   base <- tools::file_path_sans_ext(path)
   ext  <- tools::file_ext(path)
@@ -431,6 +441,105 @@ show_evo3d_defaults = function(module_name = NULL){
 }
 
 # new run_evo3d() fixed size patches----
+
+#' run evo3D end-to-end
+#'
+#' High-level pipeline that links sequence and structure to build codon-aligned,
+#' structure-aware windows and (optionally) compute diversity/neutrality stats.
+#' Internally calls the MSA, PDB, alignment, codon-collapse, and stats modules.
+#'
+#' @param msa MSA input(s): a file path, matrix, or \code{bio3d::read.fasta()} object;
+#'   or a list of any mix of these (named automatically as \code{msa1}, \code{msa2}, …).
+#' @param pdb PDB/mmCIF input(s): a \code{bio3d} PDB object or a file path; or a list of these
+#'   (named \code{pdb1}, \code{pdb2}, …). Files are read via \code{.standardize_pdb_input()}.
+#' @param chain Main chain(s) to analyze. Accepts:
+#'   \itemize{
+#'     \item \code{"auto"} (default) – auto-detect per MSA–PDB via k-mer coverage.
+#'     \item single chain ID (\code{"A"}) or concatenated homomultimer string (\code{"AB"}) – expanded per PDB.
+#'     \item list form for per-PDB/per-MSA control (see \code{.setup_chain_mapping()}).
+#'   }
+#' @param interface_chain Chains used to define interface patches. Can be \code{NA},
+#'   \code{"all"}, a character vector, or list per PDB.
+#' @param occlusion_chain Chains used to occlude solvent accessibility (RSA/SASA). Same forms as \code{interface_chain}.
+#' @param analysis_mode One of \code{"codon"} (default). Controls downstream collapse mode.
+#' @param calculate_stats Logical. If \code{TRUE}, computes per-window stats (pi, Tajima’s D, haplotype div., etc.).
+#' @param detail_level Integer verbosity of returned intermediates:
+#'   \itemize{
+#'     \item \code{<0}: invisible, no return (write-to-disk only).
+#'     \item \code{0}: minimal (skip large intermediates).
+#'     \item \code{1} (default): keep \code{pdb} chains; drop some heavy objects.
+#'     \item \code{2}: keep final MSA subsets.
+#'     \item \code{3}: keep most intermediates.
+#'   }
+#' @param verbose Integer console messaging level (0–2+).
+#' @param restart_run Reserved for future restart support (not implemented).
+#' @param user_aln Optional pre-aligned input placeholder (not implemented; alignment is performed internally).
+#'
+#' @param msa_controls Named list of MSA-module controls. Typical fields:
+#'   \code{ref_method} (\code{"consensus"}|\code{"most_complete"}|row index),
+#'   \code{force_seq_type} (\code{"protein"}|\code{"nucleotide"}|NULL),
+#'   \code{detect_sequence_threshold} (0–1), \code{detect_sequence_len},
+#'   \code{reading_frame}, \code{reading_sens}, \code{genetic_code}.
+#' @param pdb_controls Named list of PDB-module controls. Typical fields:
+#'   \code{distance_method} (\code{"all"}|\code{"ca"}|\code{"backbone"}|\code{"sidechain"}),
+#'   \code{drop_incomplete_residue}, \code{rsa_method} (\code{"rose"}|\code{"miller"}|\code{"theoretical_tien"}|\code{"empirical_tien"}),
+#'   \code{dist_cutoff} (Å) or \code{max_patch} (integers; at least one must be non-\code{NA}),
+#'   \code{rsa_cutoff}, \code{sasa_cutoff}, \code{only_exposed_in_patch}, \code{use_rsa_sasa} (\code{"and"}|\code{"or"}),
+#'   \code{interface_dist_cutoff}, \code{force_file_type} (\code{"pdb"}|\code{"cif"}|NULL), \code{patch_mode} (\code{"codon"}|\code{"residue"}).
+#' @param aln_controls Named list of alignment/merge controls. Typical fields:
+#'   \code{merge_type} (\code{"distance"}|\code{"exposure_distance"}),
+#'   \code{merge_exposure} (0–1 threshold for exposed consensus),
+#'   \code{use_sample_names} (logical), \code{auto_chain_threshold} (k-mer coverage),
+#'   \code{kmer_size} (integer).
+#' @param stat_controls Named list of statistics controls. Typical fields:
+#'   \code{calc_pi}, \code{calc_tajima}, \code{calc_hap}, \code{calc_patch_entropy},
+#'   \code{calc_polymorphic}, \code{valid_aa_only} (exclude X/* etc. when TRUE).
+#' @param output_controls Named list of output controls. Typical fields:
+#'   \code{output_dir} (path or \code{NULL}), \code{prefix} (string),
+#'   \code{write_msa_subsets}, \code{write_evo3d_df}, \code{write_call_info},
+#'   \code{write_module_intermediates}.
+#'
+#' @details
+#' \strong{Flow:}
+#' \enumerate{
+#'   \item MSA \textrightarrow{} reference peptide (\code{msa_to_ref()}).
+#'   \item PDB \textrightarrow{} distances, accessibility, patches (\code{pdb_to_patch()}).
+#'   \item Align ref–PDB, map residues \textrightarrow{} codons (\code{aln_msa_to_pdb()}).
+#'   \item Merge multi-PDB/multimer contexts to codon windows (\code{collapse_to_codon()}).
+#'   \item Extract codon-aligned nucleotide windows (\code{.extract_msa_subsets()}).
+#'   \item (Optional) Compute stats (\code{run_pegas_three()}, \code{calculate_patch_entropy()},
+#'         \code{calculate_polymorphic_residue()}).
+#' }
+#'
+#' \strong{Auto chain detection:} \code{chain = "auto"} resolves per MSA–PDB using k-mer coverage
+#' (see \code{aln_controls$kmer_size}, \code{aln_controls$auto_chain_threshold}). Passing chains are added per-PDB.
+#'
+#' \strong{3D windows:} Provide either \code{pdb_controls$dist_cutoff} (variable-size) or
+#' \code{pdb_controls$max_patch} (fixed-size). Both may be set; fixed-size enforces quotas.
+#'
+#' \strong{Exposure logic:} RSA and SASA filters define seeds and (optionally) members.
+#' \code{use_rsa_sasa = "and"} by default. SASA is recommended; RSA is provided for convenience.
+#'
+#' \strong{Not implemented (placeholders):} \code{restart_run}, \code{user_aln}.
+#'
+#' @return A list:
+#' \describe{
+#'   \item{evo3d_df}{Per-codon (and interface) table with \code{msa}, \code{codon}, \code{codon_id},
+#'     reference AA, per-PDB AA/residue IDs, merged \code{codon_patch}, lengths, exposure, distances,
+#'     and (if requested) stats (\code{pi}, \code{tajima}, \code{hap}, \code{patch_entropy}, polymorphism flags).}
+#'   \item{final_msa_subsets}{Named list of nucleotide MSA windows per patch (may be \code{NULL} if \code{detail_level < 2}).}
+#'   \item{msa_info_sets}{Per-MSA references and matrices.}
+#'   \item{pdb_info_sets}{Per-PDB sequences, residue distances, accessibility, and patches.}
+#'   \item{aln_info_sets}{Per-PDB alignment coverage and mapped tables.}
+#'   \item{call_info}{Inputs, resolved run grid, and all control settings (for reproducibility).}
+#' }
+#'
+#' @note If \code{output_controls$output_dir} is set, results can be written:
+#'   MSA subsets (FASTA per patch), \code{evo3d_df.csv}, \code{call_info.json}, and intermediates \code{.rds}.
+#'   Existing paths are made safe via \code{.safe_save()} to avoid overwrites.
+#'
+#' @export
+
 run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_chain = NA,    # how to handle pdb info #
                      analysis_mode = 'codon', calculate_stats = TRUE, detail_level = 1, verbose = 1, # how to handle analysis
                      restart_run = NULL, user_aln = NULL, # these need work -- how to restart a run?? # -- ... what does user need to give?

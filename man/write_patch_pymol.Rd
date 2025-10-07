@@ -2,25 +2,27 @@
 % Please edit documentation in R/ANALYSIS_UTILS.R
 \name{write_patch_pymol}
 \alias{write_patch_pymol}
-\title{Generate PyMOL Selection and Coloring Commands for Structural Patches}
+\title{write pymol commands for patches}
 \usage{
 write_patch_pymol(patches)
 }
 \arguments{
-\item{patches}{A data frame containing at least \code{patch} (residue groups, formatted as "residue_chain") and \code{residue_id} columns.}
+\item{patches}{data frame with at least:
+\itemize{
+  \item \code{patch} – residue groups formatted "resno_chain"
+  \item \code{residue_id} – ids of centroid residues
+}}
 }
 \value{
-A named list of character vectors:
-\describe{
-  \item{patches}{PyMOL \code{select} statements for each structural patch.}
-  \item{colors}{PyMOL \code{color} commands to visually differentiate patches.}
-  \item{centroid}{A \code{select} and \code{color} command to highlight centroid residues in black.}
-}
+named list of character vectors:
+  \itemize{
+    \item \code{patches} – pymol \code{select} commands for each patch
+    \item \code{colors} – pymol \code{color} commands to assign colors
+    \item \code{centroid} – commands to select and color centroids black
+  }
 }
 \description{
-Converts structural residue patches into PyMOL command strings for selection, coloring, and centroid annotation.
-Each patch is assigned a unique selection (e.g., \code{patch_1}) and a randomly shuffled color.
-}
-\details{
-These commands can be copied directly into a PyMOL session to visualize surface patches and their centroids.
+generates pymol command strings to visualize structural patches and centroids.
+each patch gets a unique selection (patch_1, patch_2, ...) and a random color.
+centroid residues are grouped and colored black.
 }

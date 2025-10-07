@@ -2,26 +2,35 @@
 % Please edit documentation in R/ALN_MODULE.R
 \name{.align_sequences}
 \alias{.align_sequences}
-\title{Align Reference and PDB Sequences}
+\title{Align Reference and Structure Sequences}
 \usage{
-.align_sequences(sequences, user_supplied_alignment = NULL)
+.align_sequences(sequences, user_supplied_alignment = NA)
 }
 \arguments{
-\item{sequences}{A named character vector of two protein sequences: the reference first, the structure-derived second.}
+\item{sequences}{A named character vector of length two, containing the
+reference sequence first and the structure-derived sequence second.
+Example: \code{c(ref = "MKT...", pdb = "MK-...")}.}
 
-\item{user_supplied_alignment}{Placeholder for pre-aligned input (currently unused).}
+\item{user_supplied_alignment}{Reserved for future use. Currently ignored.}
 }
 \value{
-A list with elements:
+A list with components:
 \describe{
-  \item{aln_mat}{Character matrix of aligned sequences.}
-  \item{coverage}{Named list of coverage ranges for each sequence.}
+  \item{aln_mat}{A two-column character matrix with aligned reference and
+    structure sequences.}
+  \item{coverage}{Named list of coverage ranges (see
+    \code{.calculate_coverage}). Includes mismatch ranges if applicable.}
 }
 }
 \description{
-Aligns a pair of amino acid sequences using ClustalOmega (via the \pkg{msa} package),
-computes positional mismatches, and summarizes coverage across the alignment.
+Aligns a reference amino acid sequence against a structure-derived sequence
+using ClustalOmega (via the \pkg{msa} package, default BLOSUM65). Computes
+positional mismatches and summarizes aligned coverage ranges.
 }
 \details{
-Used internally to align MSA or PDB-derived sequences to a reference
+Intended for internal use in mapping reference sequences to PDB-derived
+sequences prior to downstream patch analyses.
+}
+\seealso{
+\code{.calculate_coverage}
 }

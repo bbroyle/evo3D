@@ -7,18 +7,23 @@
 .calculate_coverage(aln_mat, mismatch)
 }
 \arguments{
-\item{aln_mat}{A character matrix representing a sequence alignment (rows = sequences, columns = positions).}
+\item{aln_mat}{A character matrix representing a sequence alignment
+(rows = sequences, columns = positions).}
 
-\item{mismatch}{Optional numeric vector of mismatch positions to summarize (e.g., from sequence comparison).}
+\item{mismatch}{Optional numeric vector of mismatch positions to summarize.
+If not supplied or empty, the returned \code{mismatch} element is \code{NA}.}
 }
 \value{
-A named list. Each element is a character vector of ranges for a sequence (e.g., \code{"5:25"}), plus an optional \code{mismatch} element.
+A named list. Each element corresponds to one sequence, containing a
+  character vector of ranges (e.g., \code{"5:25"}). Includes an additional
+  element \code{mismatch} if mismatches were provided.
 }
 \description{
-Identifies contiguous non-gap regions in each sequence of an alignment matrix and formats them as range strings.
-Optionally includes ranges of mismatched positions between aligned sequences.
+Identifies contiguous non-gap regions in each sequence of an alignment matrix
+and formats them as start:end ranges. Optionally summarizes contiguous runs
+of mismatch positions across the alignment.
 }
 \details{
-Called by \code{.align_sequences()}.
+Called internally by \code{.align_sequences()}.
 }
 \keyword{internal}

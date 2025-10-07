@@ -2,28 +2,31 @@
 % Please edit documentation in R/ANALYSIS_UTILS.R
 \name{calculate_polymorphic_residue}
 \alias{calculate_polymorphic_residue}
-\title{Flag Polymorphic Codons and Compute Site Entropy}
+\title{flag polymorphic codons and compute site entropy}
 \usage{
 calculate_polymorphic_residue(msa_info_sets, residue_df, valid_aa_only = TRUE)
 }
 \arguments{
-\item{msa_info_sets}{A named list of MSA info objects (e.g., \code{msa1}, \code{msa2}, ...) each with \code{msa_mat}.}
+\item{msa_info_sets}{named list of msa info objects (each with \code{msa_mat})}
 
-\item{residue_df}{A data frame of patch residues, typically from \code{aln_msa_to_pdb()}; must include \code{codon} and optionally \code{msa}.}
+\item{residue_df}{data frame of patch residues (from \code{aln_msa_to_pdb()}),
+must include \code{codon_id}, \code{codon}, and optionally \code{msa}}
 
-\item{valid_aa_only}{Logical; if \code{TRUE}, only standard amino acids are considered polymorphic (excludes X, *, etc.).}
+\item{valid_aa_only}{logical. if TRUE (default), only standard amino acids
+(AVILMWYFSTNQCGPRHKDE) are considered when testing polymorphism}
 }
 \value{
-An updated \code{residue_df} with added columns:
-\describe{
-  \item{polymorphic}{Binary indicator: 1 if codon is polymorphic (multiple amino acids observed), 0 otherwise.}
-  \item{site_entropy}{Shannon entropy of amino acid distribution at the codon site.}
-}
+input \code{residue_df} with two added columns:
+  \itemize{
+    \item \code{polymorphic} – 1 if codon site has >1 amino acid, 0 otherwise
+    \item \code{site_entropy} – shannon entropy (bits, log base 2) of aa distribution
+  }
 }
 \description{
-Translates codon-aligned nucleotide MSAs into amino acids and identifies codon sites with
-evidence of amino acid polymorphism. Also calculates per-site Shannon entropy based on amino acid usage.
+translates codon-aligned nucleotide msas to amino acids and flags codons
+with amino acid polymorphism. also computes shannon entropy per codon
+site from amino acid frequencies.
 }
 \details{
-Works with both single-MSA and extended multi-MSA evo3D results (via \code{msa_info_sets}).
+works with single-msa or multi-msa evo3d results.
 }

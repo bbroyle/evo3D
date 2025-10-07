@@ -7,6 +7,24 @@
 
 
 # .split_pdb_column() ----
+
+#' split pdb-mapped columns by codon
+#'
+#' collapses pdb-level residue mappings into codon-level summaries.
+#' keeps one reference aa, msa id, and codon string per codon_id,
+#' and adds concatenated pdb aa and residue ids for each pdb source.
+#'
+#' @param df data frame with at least \code{codon_id}, \code{ref_aa},
+#'   \code{msa}, \code{codon}, \code{pdb}, \code{pdb_aa}, and \code{residue_id}
+#'
+#' @return data frame with one row per \code{codon_id}, including:
+#' \itemize{
+#'   \item \code{ref_aa}, \code{msa}, \code{codon}
+#'   \item per-pdb columns \code{<pdb>_pdb_aa}, \code{<pdb>_residue_id}
+#'   \item \code{resolved} – number of non-gap residues across pdbs
+#' }
+#' @keywords internal
+
 .split_pdb_column = function(df) {
   # store the intended codon order
   codon_order <- unique(df$codon_id)
@@ -60,6 +78,18 @@
 
 
 # .union_distance() ----
+
+#' union codon sets across patches
+#'
+#' combines multiple patch strings (codon ids separated by '+')
+#' into a single union patch. if a codon appears in multiple
+#' patches, its count is taken as the maximum observed across patches.
+#'
+#' @param patches character vector of patch strings
+#'
+#' @return single patch string with codon ids joined by '+'
+#' @keywords internal
+
 .union_distance = function(patches){
 
   # drop NA patches
@@ -98,6 +128,19 @@
 }
 
 # .union_exposure_distance() ----
+
+#' union codon sets with exposure filter
+#'
+#' combines multiple patch strings into a single union patch,
+#' keeping the maximum observed count per codon across patches.
+#' non valid codons can be filtered out by providing a valid set.
+#'
+#' @param patches character vector of patch strings (codon ids separated by '+')
+#' @param valid_codons character vector of codon ids to retain
+#'
+#' @return single patch string with codon ids joined by '+'
+#' @keywords internal
+
 .union_exposure_distance = function(patches, valid_codons){
 
   # drop NA patches
@@ -137,6 +180,29 @@
 }
 
 # .variable_size_merge() ----
+
+#' merge codon-level patches with variable size rules
+#'
+#' rebuilds codon patches from residue-level assignments using either
+#' geometric distance only, or exposure + distance criteria.
+#'
+#' @param codon_df data frame of codons with columns \code{codon_id}, \code{exposed}, and \code{codon_patch}
+#' @param residue_df data frame of residues with columns \code{codon_id} and \code{codon_patch}
+#' @param merge_type character. one of \code{"distance"} (default) or \code{"exposure_distance"}
+#' @param only_exposed_in_patch logical. if TRUE, all members must be exposed;
+#'   if FALSE, only seed codons must be exposed
+#'
+#' @return updated \code{codon_df} with merged \code{codon_patch} column
+#' @keywords internal
+#'
+#' @details
+#' three modes are supported:
+#' \itemize{
+#'   \item distance – patches merged by geometry only
+#'   \item exposure_distance – seeds must be exposed, members may be buried
+#'   \item exposure_distance + only_exposed_in_patch = TRUE – all residues must be exposed
+#' }
+
 .variable_size_merge <- function(codon_df, residue_df, merge_type = c("distance", "exposure_distance"),
                                  only_exposed_in_patch = FALSE) {
   merge_type <- match.arg(merge_type)
@@ -205,6 +271,26 @@
 }
 
 # .fixed_size_merge() ----
+
+#' merge fixed-size 3d windows
+#'
+#' builds codon- or residue-level fixed size patches across one or more pdbs.
+#' handles multimers and multi-pdb sets by unifying residue neighborhoods into
+#' a consistent codon-level environment.
+#'
+#' @param codon_df data frame of codons with columns \code{codon_id}, \code{exposed}, \code{exposed_count}, and \code{codon_patch}
+#' @param residue_df data frame of residues with columns \code{codon_id}, \code{residue_id}, \code{codon_patch}, \code{pdb}, and \code{exposed}
+#' @param patch_mode character, either \code{"codon"} or \code{"residue"}
+#' @param max_patch integer. maximum patch size (number of codons/residues)
+#' @param dist_cutoff numeric. maximum distance in angstroms (default NA = no cutoff)
+#' @param merge_type character. either \code{"distance"} or \code{"exposure_distance"}
+#' @param pdb_info_sets list of pdb_info objects, each with residue-wise distance matrices
+#' @param only_exposed_in_patch logical. if TRUE, all residues in patch must be exposed;
+#'   if FALSE, only seed codons must be exposed
+#'
+#' @return updated \code{codon_df} with rebuilt \code{codon_patch} assignments
+#' @keywords internal
+
 .fixed_size_merge = function(codon_df, residue_df, patch_mode,
                              max_patch,
                              dist_cutoff, merge_type,
@@ -662,6 +748,68 @@
 }
 
 # collapse_to_codon() ----
+
+#' collapse residue-level patches to codon windows
+#'
+#' merges residue-level patch assignments across one or more pdbs into a single
+#' codon-level window per site. supports variable-length (union) or fixed-size
+#' 3d windows, exposure-aware merging, multimers, and multi-pdb contexts.
+#'
+#' @param residue_df data frame of per-residue annotations (from \code{aln_msa_to_pdb()}),
+#'   containing at least: \code{codon_id}, \code{codon}, \code{msa}, \code{pdb},
+#'   \code{residue_id}, \code{exposed}, \code{codon_patch}, \code{codon_len},
+#'   \code{unique_codon}, \code{max_dist}. rows whose \code{residue_id} starts with
+#'   \code{"interface_"} are treated as interface pseudo-patches.
+#' @param merge_type character. merging rule for variable/fixed windows:
+#'   \code{"distance"} (geometry only) or \code{"exposure_distance"} (exposure + geometry).
+#' @param merge_exposure numeric in [0,1]. fraction of pdb contexts in which a codon
+#'   must be exposed to qualify as an exposed seed (default 0.5). computed as
+#'   \code{exposed_count / resolved}.
+#' @param max_patch integer or \code{NA}. if \code{NA}, produce union (variable length);
+#'   otherwise build fixed-size windows capped at \code{max_patch}.
+#' @param only_exposed_in_patch logical. if \code{TRUE}, all members in a patch must be
+#'   exposed; if \code{FALSE}, only the seed must be exposed.
+#' @param patch_mode character. \code{"codon"} (deduplicate by codon) or
+#'   \code{"residue"} (quota by nearest residues) for fixed-size merging.
+#' @param dist_cutoff numeric or \code{NA}. maximum Å distance when assembling fixed-size
+#'   neighborhoods (ignored if variable-length union).
+#' @param merge_interface_surface logical. when \code{TRUE} and using
+#'   \code{merge_type = "exposure_distance"} with \code{only_exposed_in_patch = TRUE},
+#'   interface pseudo-patches are filtered to exposed codons before inclusion.
+#' @param pdb_info_sets named list of pdb-info objects (as from \code{pdb_to_patch()}),
+#'   each containing \code{residue_dist}; required for fixed-size merging across pdbs.
+#'
+#' @details
+#' gap-mapped residues (\code{codon == "-"}) are preserved by assigning a unique
+#' placeholder \code{codon_id} and reinserting at their original relative position
+#' using nearest upstream/downstream real codons.
+#'
+#' variable-length mode uses union builders:
+#' \itemize{
+#'   \item \code{merge_type = "distance"} → union of geometric neighbors
+#'   \item \code{merge_type = "exposure_distance"} → union with exposure filtering
+#'         (seed-only or all-members via \code{only_exposed_in_patch})
+#' }
+#' fixed-size mode uses nearest-neighbor ranking across pdb contexts with two schemes:
+#' \itemize{
+#'   \item \code{patch_mode = "codon"} – deduplicate by codon, keep closest unique codons
+#'   \item \code{patch_mode = "residue"} – quota across contexts to balance sources
+#' }
+#' in exposure-aware merges, buried seeds are nulled post-merge when
+#' \code{merge_type = "exposure_distance"}.
+#'
+#' @return data frame at codon resolution with updated windows, including (where present):
+#'   \itemize{
+#'     \item \code{codon_id}, \code{ref_aa}, \code{msa}, \code{codon}
+#'     \item per-pdb columns \code{<pdb>_pdb_aa}, \code{<pdb>_residue_id}
+#'     \item \code{resolved}, \code{exposed_count}, \code{exposed}
+#'     \item \code{codon_patch}, \code{codon_len}, \code{unique_codon}, \code{max_dist}
+#'     \item \code{msa_subset_id} (set to \code{NA} when \code{codon_patch} is \code{NA})
+#'   }
+#' interface pseudo-patches are appended as extra rows (with \code{msa_subset_id}
+#' formed from interface id and pdb id) when applicable.
+#' @export
+
 collapse_to_codon = function(residue_df, merge_type = 'exposure_distance', merge_exposure = 0.5,
                               max_patch, only_exposed_in_patch = TRUE, patch_mode, dist_cutoff,
                               merge_interface_surface, pdb_info_sets){

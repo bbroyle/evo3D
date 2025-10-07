@@ -2,7 +2,7 @@
 % Please edit documentation in R/WRAPPER_MODULE.R
 \name{run_evo3d}
 \alias{run_evo3d}
-\title{Run evo3D Workflow}
+\title{run evo3D end-to-end}
 \usage{
 run_evo3d(
   msa,
@@ -10,7 +10,8 @@ run_evo3d(
   chain = "auto",
   interface_chain = NA,
   occlusion_chain = NA,
-  compute_stats = TRUE,
+  analysis_mode = "codon",
+  calculate_stats = TRUE,
   detail_level = 1,
   verbose = 1,
   restart_run = NULL,
@@ -23,58 +24,114 @@ run_evo3d(
 )
 }
 \arguments{
-\item{msa}{A matrix, file path, or list of MSAs (character matrices, fasta objects, or file paths).}
+\item{msa}{MSA input(s): a file path, matrix, or \code{bio3d::read.fasta()} object;
+or a list of any mix of these (named automatically as \code{msa1}, \code{msa2}, …).}
 
-\item{pdb}{A \code{bio3d} PDB object or list of such objects.}
+\item{pdb}{PDB/mmCIF input(s): a \code{bio3d} PDB object or a file path; or a list of these
+(named \code{pdb1}, \code{pdb2}, …). Files are read via \code{.standardize_pdb_input()}.}
 
-\item{chain}{Chain ID(s) to analyze. Can be "auto", a character, vector, or nested list.}
-
-\item{interface_chain}{Chain(s) to include in interface-based patching (optional).}
-
-\item{occlusion_chain}{Chain(s) to include in occlusion masking for RSA (optional).}
-
-\item{compute_stats}{Logical; whether to calculate nucleotide diversity, Tajima’s D, etc. (default: \code{TRUE}).}
-
-\item{detail_level}{Controls the level of detail in the returned R object.
-
-\describe{
-  \item{0}{Return only `evo3d_df` and `pdb_info_sets`. Minimal memory usage. Suitable for post hoc visualization and writing to PDB files, but not for restart or stat recomputation.}
-  \item{1}{Adds `msa_info_sets`, enabling restart with user-provided alignments. Does not include full alignment-to-structure mappings or subsets.}
-  \item{2}{Adds full `msa_subsets` and MSA-to-PDB patch mappings, allowing for patch-level stat recomputation or post hoc reruns on individual structures.}
+\item{chain}{Main chain(s) to analyze. Accepts:
+\itemize{
+  \item \code{"auto"} (default) – auto-detect per MSA–PDB via k-mer coverage.
+  \item single chain ID (\code{"A"}) or concatenated homomultimer string (\code{"AB"}) – expanded per PDB.
+  \item list form for per-PDB/per-MSA control (see \code{.setup_chain_mapping()}).
 }}
 
-\item{verbose}{Controls the verbosity of printed output.
+\item{interface_chain}{Chains used to define interface patches. Can be \code{NA},
+\code{"all"}, a character vector, or list per PDB.}
 
-\describe{
-  \item{0}{Silent mode. Only errors or critical messages are printed.}
-  \item{1}{Basic progress updates showing which module is running.}
-  \item{2}{Detailed output, including all submodular steps.}
- }}
+\item{occlusion_chain}{Chains used to occlude solvent accessibility (RSA/SASA). Same forms as \code{interface_chain}.}
 
-\item{restart_run}{A previous evo3d run object used to restart the pipeline (e.g., after alignment failure or to reuse mapped PDB metadata).}
+\item{analysis_mode}{One of \code{"codon"} (default). Controls downstream collapse mode.}
 
-\item{user_aln}{A user-provided MSA aligned to the reference sequence. Can be a single alignment or a list (for multi-run pipelines). Used in conjunction with \code{restart_run}.}
+\item{calculate_stats}{Logical. If \code{TRUE}, computes per-window stats (pi, Tajima’s D, haplotype div., etc.).}
 
-\item{msa_controls}{List of control parameters for MSA preprocessing (e.g. \code{ref_method}, \code{force_seqtype}).}
+\item{detail_level}{Integer verbosity of returned intermediates:
+\itemize{
+  \item \code{<0}: invisible, no return (write-to-disk only).
+  \item \code{0}: minimal (skip large intermediates).
+  \item \code{1} (default): keep \code{pdb} chains; drop some heavy objects.
+  \item \code{2}: keep final MSA subsets.
+  \item \code{3}: keep most intermediates.
+}}
 
-\item{pdb_controls}{List of control parameters for patch definition (e.g. \code{patch.dist.cutoff}, \code{rsa.method}).}
+\item{verbose}{Integer console messaging level (0–2+).}
 
-\item{aln_controls}{List of control parameters for MSA–structure alignment (if applicable).}
+\item{restart_run}{Reserved for future restart support (not implemented).}
 
-\item{stat_controls}{List of control parameters for patch-level statistic calculations (e.g. \code{calc_pi}, \code{calc_tajima}).}
+\item{user_aln}{Optional pre-aligned input placeholder (not implemented; alignment is performed internally).}
 
-\item{output_controls}{List of control parameters for output formatting (e.g. \code{output_format}, \code{output_dir}).}
+\item{msa_controls}{Named list of MSA-module controls. Typical fields:
+\code{ref_method} (\code{"consensus"}|\code{"most_complete"}|row index),
+\code{force_seq_type} (\code{"protein"}|\code{"nucleotide"}|NULL),
+\code{detect_sequence_threshold} (0–1), \code{detect_sequence_len},
+\code{reading_frame}, \code{reading_sens}, \code{genetic_code}.}
+
+\item{pdb_controls}{Named list of PDB-module controls. Typical fields:
+\code{distance_method} (\code{"all"}|\code{"ca"}|\code{"backbone"}|\code{"sidechain"}),
+\code{drop_incomplete_residue}, \code{rsa_method} (\code{"rose"}|\code{"miller"}|\code{"theoretical_tien"}|\code{"empirical_tien"}),
+\code{dist_cutoff} (Å) or \code{max_patch} (integers; at least one must be non-\code{NA}),
+\code{rsa_cutoff}, \code{sasa_cutoff}, \code{only_exposed_in_patch}, \code{use_rsa_sasa} (\code{"and"}|\code{"or"}),
+\code{interface_dist_cutoff}, \code{force_file_type} (\code{"pdb"}|\code{"cif"}|NULL), \code{patch_mode} (\code{"codon"}|\code{"residue"}).}
+
+\item{aln_controls}{Named list of alignment/merge controls. Typical fields:
+\code{merge_type} (\code{"distance"}|\code{"exposure_distance"}),
+\code{merge_exposure} (0–1 threshold for exposed consensus),
+\code{use_sample_names} (logical), \code{auto_chain_threshold} (k-mer coverage),
+\code{kmer_size} (integer).}
+
+\item{stat_controls}{Named list of statistics controls. Typical fields:
+\code{calc_pi}, \code{calc_tajima}, \code{calc_hap}, \code{calc_patch_entropy},
+\code{calc_polymorphic}, \code{valid_aa_only} (exclude X/* etc. when TRUE).}
+
+\item{output_controls}{Named list of output controls. Typical fields:
+\code{output_dir} (path or \code{NULL}), \code{prefix} (string),
+\code{write_msa_subsets}, \code{write_evo3d_df}, \code{write_call_info},
+\code{write_module_intermediates}.}
 }
 \value{
-A list containing:
-\item{evo3d_df}{Final data frame with codon-level mappings and statistics.}
-\item{final_msa_subsets}{Patch-level MSAs used in downstream statistics.}
-\item{msa_info_sets}{Reference and peptide information for each input MSA.}
-\item{pdb_info_sets}{Structure and patch data for each input PDB.}
-\item{aln_info_sets}{Codon-level alignment mappings from MSA to PDB.}
-\item{call_info}{Cached input metadata and control parameters.}
+A list:
+\describe{
+  \item{evo3d_df}{Per-codon (and interface) table with \code{msa}, \code{codon}, \code{codon_id},
+    reference AA, per-PDB AA/residue IDs, merged \code{codon_patch}, lengths, exposure, distances,
+    and (if requested) stats (\code{pi}, \code{tajima}, \code{hap}, \code{patch_entropy}, polymorphism flags).}
+  \item{final_msa_subsets}{Named list of nucleotide MSA windows per patch (may be \code{NULL} if \code{detail_level < 2}).}
+  \item{msa_info_sets}{Per-MSA references and matrices.}
+  \item{pdb_info_sets}{Per-PDB sequences, residue distances, accessibility, and patches.}
+  \item{aln_info_sets}{Per-PDB alignment coverage and mapped tables.}
+  \item{call_info}{Inputs, resolved run grid, and all control settings (for reproducibility).}
+}
 }
 \description{
-Full evo3D wrapper to align MSA(s) and PDB(s), generate 3D-defined patches, codon mappings, and selection statistics.
-Handles homomultimers and multi-model structures automatically.
+High-level pipeline that links sequence and structure to build codon-aligned,
+structure-aware windows and (optionally) compute diversity/neutrality stats.
+Internally calls the MSA, PDB, alignment, codon-collapse, and stats modules.
+}
+\details{
+\strong{Flow:}
+\enumerate{
+  \item MSA \textrightarrow{} reference peptide (\code{msa_to_ref()}).
+  \item PDB \textrightarrow{} distances, accessibility, patches (\code{pdb_to_patch()}).
+  \item Align ref–PDB, map residues \textrightarrow{} codons (\code{aln_msa_to_pdb()}).
+  \item Merge multi-PDB/multimer contexts to codon windows (\code{collapse_to_codon()}).
+  \item Extract codon-aligned nucleotide windows (\code{.extract_msa_subsets()}).
+  \item (Optional) Compute stats (\code{run_pegas_three()}, \code{calculate_patch_entropy()},
+        \code{calculate_polymorphic_residue()}).
+}
+
+\strong{Auto chain detection:} \code{chain = "auto"} resolves per MSA–PDB using k-mer coverage
+(see \code{aln_controls$kmer_size}, \code{aln_controls$auto_chain_threshold}). Passing chains are added per-PDB.
+
+\strong{3D windows:} Provide either \code{pdb_controls$dist_cutoff} (variable-size) or
+\code{pdb_controls$max_patch} (fixed-size). Both may be set; fixed-size enforces quotas.
+
+\strong{Exposure logic:} RSA and SASA filters define seeds and (optionally) members.
+\code{use_rsa_sasa = "and"} by default. SASA is recommended; RSA is provided for convenience.
+
+\strong{Not implemented (placeholders):} \code{restart_run}, \code{user_aln}.
+}
+\note{
+If \code{output_controls$output_dir} is set, results can be written:
+  MSA subsets (FASTA per patch), \code{evo3d_df.csv}, \code{call_info.json}, and intermediates \code{.rds}.
+  Existing paths are made safe via \code{.safe_save()} to avoid overwrites.
 }

@@ -2,26 +2,22 @@
 % Please edit documentation in R/WRAPPER_MODULE.R
 \name{.safe_save}
 \alias{.safe_save}
-\title{Safely Resolve a Non-Clashing Output Path}
+\title{safely resolve non-clashing output path}
 \usage{
 .safe_save(path, is_dir = FALSE)
 }
 \arguments{
-\item{path}{Character. Desired path.}
+\item{path}{character. desired path}
 
-\item{is_dir}{Logical. Is it a directory?}
-
-\item{max_tries}{Integer. How many numbered attempts before fallback to POSIXct timestamp}
-
-\item{tag}{Character. Optional tag to append to the path.}
+\item{is_dir}{logical. if TRUE, treat as directory (default FALSE)}
 }
 \value{
-A list with:
-  \item{path}{Safe file path}
-  \item{systime}{Used timestamp (in fallback or NULL if not used)}
+list with
+  \item{path}{safe path string}
+  \item{tag}{timestamp tag if fallback used, NULL otherwise}
 }
 \description{
-Avoids overwriting files/directories by appending numeric suffixes.
-If no safe name is found, uses a fallback with a consistent timestamp.
+avoids overwriting by appending a numeric or timestamp tag.
+returns a safe path for saving a file or directory
 }
 \keyword{internal}

@@ -2,39 +2,99 @@
 % Please edit documentation in R/ALN_MODULE.R
 \name{aln_msa_to_pdb}
 \alias{aln_msa_to_pdb}
-\title{Align Protein Structure to MSA and Extract Codon-Level Windows}
+\title{Align Structure to Reference MSA and Generate Codon-Level Windows}
 \usage{
 aln_msa_to_pdb(
   msa_info,
   pdb_info,
-  chain = NA,
-  drop_unused_residues = TRUE,
-  verbose = 1
+  chain = "auto",
+  subset_msa = TRUE,
+  verbose = 1,
+  run_grid = NULL,
+  drop_gap_map = TRUE,
+  fix_gap_map_and_dedup_codons = TRUE,
+  patch_mode,
+  max_patch,
+  dist_cutoff,
+  only_exposed_in_patch,
+  merge_type = "hold",
+  merge_exposure = "hold"
 )
 }
 \arguments{
-\item{msa_info}{A named list output from \code{WRAPPER_msa_to_ref()}, containing the MSA matrix and reference peptide sequence.}
+\item{msa_info}{A named list from \code{msa_to_ref()}, containing
+at least \code{msa_mat} (nucleotide MSA matrix) and \code{pep}
+(reference peptide sequence).}
 
-\item{pdb_info}{A named list output from \code{WRAPPER_pdb_to_patch()}, including PDB-derived sequences and residue/patch annotations.}
+\item{pdb_info}{A named list from \code{WRAPPER_pdb_to_patch()}, including
+\code{seq_set} (PDB-derived peptide sequences), \code{residue_df}
+(residue/patch annotations), and \code{residue_dist} (residue distance
+matrix).}
 
-\item{chain}{Character string indicating the chain to analyze. Required.}
+\item{chain}{Character string specifying the PDB chain to analyze. Ignored if
+\code{run_grid} is provided.}
 
-\item{drop_unused_residues}{Logical; if \code{TRUE}, drops PDB residues not linked to codon-level info.}
+\item{subset_msa}{Logical; if \code{TRUE}, nucleotide MSA subsets are
+extracted for each patch. Default \code{TRUE}.}
+
+\item{verbose}{Integer; level of console reporting. Default \code{1}.}
+
+\item{run_grid}{Optional data frame specifying combinations of MSA, PDB, and
+chain to process. If supplied, overrides \code{chain}.}
+
+\item{drop_gap_map}{Logical; if \code{TRUE}, drops patches centered on
+gap-mapped residues. Default \code{TRUE}.}
+
+\item{fix_gap_map_and_dedup_codons}{Logical; if \code{TRUE}, calls
+\code{.fix_gap_map_and_dedup_codons()} to remove gap residues from patch
+membership and ensure codon deduplication. Default \code{TRUE}.}
+
+\item{patch_mode}{Either \code{"codon"} or \code{"residue"}, controlling
+how patches are deduplicated and rebuilt.}
+
+\item{max_patch}{Integer; maximum patch size. If \code{NA}, patches are
+variable-length.}
+
+\item{dist_cutoff}{Numeric; maximum residue–residue distance when expanding
+patches. Default \code{NULL} (no cutoff).}
+
+\item{only_exposed_in_patch}{Logical; if \code{TRUE}, restricts patch
+rebuilding to exposed residues only.}
+
+\item{merge_type}{Character; strategy for merging overlapping patches.
+Typically \code{"hold"}. Reserved for internal use.}
+
+\item{merge_exposure}{Character; strategy for merging exposure information.
+Typically \code{"hold"}. Reserved for internal use.}
 }
 \value{
-A list with:
+A list with three components:
 \describe{
-  \item{aln_coverage}{Named list of alignment coverage ranges.}
-  \item{aln_df}{Data frame mapping residues to codons, amino acids, and patch identifiers.}
-  \item{msa_subsets}{Named list of nucleotide MSA matrices, one per patch.}
+  \item{coverage}{List of alignment metadata for each MSA–PDB–chain run.}
+  \item{aln_df}{Data frame mapping residues to codons, amino acids, and patch
+        identifiers, after gap/deduplication cleanup.}
+  \item{msa_subsets}{Named list of nucleotide MSA matrices, one per patch
+        (if \code{subset_msa = TRUE}).}
 }
 }
 \description{
-Module for aligning a structure-derived protein sequence to the reference sequence in a multiple
-sequence alignment (MSA), mapping 3D patches to codon-level positions, and extracting corresponding
-nucleotide windows. This forms the bridge between structure and sequence in the evo3D pipeline.
+Aligns a structure-derived protein sequence to the reference sequence in one
+or more nucleotide MSAs, maps structural patches to codon positions, and
+extracts corresponding nucleotide windows. This function links 3D structure
+to sequence diversity by chaining together multiple submodules:
+\enumerate{
+  \item Sequence alignment of PDB vs. MSA reference (\code{.align_sequences()}).
+  \item Mapping aligned positions to codon and residue indices
+        (\code{.map_aln_to_positions()}).
+  \item Converting structural patches to codon-level definitions
+        (\code{.map_patches_to_codons()}).
+  \item Optional patch cleanup: gap-map removal and codon deduplication
+        (\code{.fix_gap_map_and_dedup_codons()}).
+  \item Extraction of nucleotide MSA subsets for each patch
+        (\code{.extract_msa_subsets()}).
+}
 }
 \details{
-This function is a core module in the evo3D workflow and is called internally by \code{run_evo3d()}.
-It chains together multiple submodules to produce codon-aligned MSA subsets for each structural patch.
+This is the core alignment module in the evo3D workflow and is called
+internally by \code{run_evo3d()}.
 }

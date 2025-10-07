@@ -2,25 +2,35 @@
 % Please edit documentation in R/ALN_MODULE.R
 \name{.map_aln_to_positions}
 \alias{.map_aln_to_positions}
-\title{Map Aligned Amino Acid Positions to Nucleotide Positions}
+\title{Map Alignment Columns to Codon and Residue Indices}
 \usage{
 .map_aln_to_positions(aln_mat, residue_df, chain = NA)
 }
 \arguments{
-\item{aln_mat}{A character matrix from \code{.align_sequences()}, with two rows: reference and structure-derived.}
+\item{aln_mat}{A character matrix returned by \code{.align_sequences()},
+with two rows (reference and structure-derived sequences).}
 
-\item{residue_df}{Data frame of patch or interface residues, typically from \code{identify_patches()}.}
+\item{residue_df}{Data frame of patch or interface residues, such as that
+returned by \code{identify_patches()}, containing at least
+\code{residue_id} and \code{orig_chain}.}
 
-\item{chain}{Optional chain ID string (or vector) to restrict mapping to a subset of chains.}
+\item{chain}{Optional chain identifier (string or vector). If supplied,
+restricts mapping to residues belonging to the given chain(s).}
 }
 \value{
-Modified \code{aln_mat} with alignment positions replaced by codon and PDB residue indices.
+A modified character matrix with additional columns:
+\describe{
+  \item{codon}{Reference codon indices for aligned positions.}
+  \item{residue_id}{PDB residue indices aligned to the structure sequence.}
+}
 }
 \description{
-Overlays alignment columns with residue-level and codon-level position indices for downstream
-mapping of structural patches to nucleotide-level coordinates.
+Annotates an alignment matrix by overlaying reference codon positions and
+PDB residue indices onto aligned amino acids. This preserves the aligned
+sequence characters while adding positional context for downstream mapping.
 }
 \details{
-Typically used after \code{.align_sequences()} and \code{identify_patches()} to annotate alignment matrix rows.
+Typically used after \code{.align_sequences()} and \code{identify_patches()}
+to connect reference codons with structure-derived residues.
 }
 \keyword{internal}

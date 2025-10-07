@@ -2,30 +2,56 @@
 % Please edit documentation in R/ALN_MODULE.R
 \name{.map_patches_to_codons}
 \alias{.map_patches_to_codons}
-\title{Map Protein Patch Regions to Codon Coordinates}
+\title{Convert Residue Patches to Codon-Based Coordinates}
 \usage{
-.map_patches_to_codons(pos_aln, residue_df)
+.map_patches_to_codons(
+  aln_table,
+  residue_df,
+  drop_gap_map = TRUE,
+  dist_mat = NA
+)
 }
 \arguments{
-\item{pos_aln}{A 2-row alignment matrix with codon indices (row 1) and residue indices (row 2), from \code{.map_aln_to_positions()}.}
+\item{aln_table}{Alignment table from \code{.map_aln_to_positions()},
+containing at least columns \code{codon}, \code{msa}, \code{pdb},
+\code{residue_id}, \code{ref_aa}, and \code{pdb_aa}.}
 
-\item{residue_df}{Data frame of patch-level residues, containing at minimum \code{residue_id} and \code{patch} columns.}
+\item{residue_df}{Data frame of patch-level residues (e.g. from
+\code{pdb_to_patch()}), with columns including \code{residue_id},
+\code{patch}, \code{patch_len}, \code{exposed}, and \code{max_dist}.}
+
+\item{drop_gap_map}{Logical; whether to drop gap-mapped residues. If
+\code{TRUE} (default), patches centered on gap residues are removed,
+and gap residues are excluded from other patches.}
+
+\item{dist_mat}{Optional residue–residue distance matrix (from
+\code{pdb_to_patch()}). If supplied and \code{drop_gap_map = TRUE},
+\code{max_dist} is updated after gap removal.}
 }
 \value{
-A data frame matching residues to codon-based patch identifiers, with columns:
-\describe{
-  \item{residue_id}{PDB residue identifier}
-  \item{codon}{Codon position in the alignment}
-  \item{codon_patch}{Codon-based patch identifier (e.g., "15+22+27")}
-  \item{msa_subset_id}{Unique ID used to extract the corresponding MSA subset}
-}
+A data frame aligning residues with codon-based patch information,
+  including:
+  \describe{
+    \item{codon_id}{Codon identifier string (e.g. \code{"15_msa1"}).}
+    \item{codon_patch}{“+”-delimited string of codon IDs making up the patch.}
+    \item{codon_len}{Number of codons in the patch.}
+    \item{unique_codon}{Number of unique codons represented.}
+    \item{gap_map_count}{Number of gap-mapped residues removed from the patch.}
+    \item{patch, patch_len}{Residue-based patch membership (cleaned).}
+    \item{exposed, max_dist}{Exposure and distance metadata (updated if applicable).}
+  }
 }
 \description{
-Converts patch-level residue groupings (e.g., structural surface patches) into codon-aligned nucleotide coordinates
-based on a dual-layer alignment matrix produced by \code{.map_aln_to_positions()}.
+Maps structural patch definitions from residue space into codon-aligned
+coordinates, using a MSA-PDB alignment table from
+\code{.map_aln_to_positions()}. This produces codon-based patch identifiers
+that can be used for downstream nucleotide-level extraction.
 }
 \details{
-This function creates \code{codon_patch} strings for each residue, encoding the codons that make up its structural context.
-Also assigns a unique \code{msa_subset_id} used for downstream patch extraction.
+Each residue inherits codon patch membership, with options to remove
+gap-mapped residues. When gaps are dropped, both gap-seeded patches and
+membership of gap residues in other patches are removed. If a residue
+distance matrix is supplied, \code{max_dist} is recalculated after
+gap-removal.
 }
 \keyword{internal}

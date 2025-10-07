@@ -2,21 +2,21 @@
 % Please edit documentation in R/WRAPPER_MODULE.R
 \name{.setup_controls}
 \alias{.setup_controls}
-\title{Validate and Merge Control Lists}
+\title{validate and merge control lists}
 \usage{
 .setup_controls(user_controls, module_name = "")
 }
 \arguments{
-\item{user_controls}{A named list of user-supplied parameters.}
+\item{user_controls}{named list of user-supplied parameters}
 
-\item{module_name}{Optional string for messaging context.}
-
-\item{default_controls}{A named list of default parameters.}
+\item{module_name}{character. module context used to select defaults
+(one of "msa","pdb","aln","stat","output")}
 }
 \value{
-A list combining defaults and valid user entries.
+named list of controls, with defaults updated by valid user entries
 }
 \description{
-Internal helper to merge user-provided control lists with defaults, warning on unrecognized keys.
+internal helper to merge user-supplied control parameters with defaults.
+unknown keys stop with an error so unwanted arguments do not pass through.
 }
 \keyword{internal}

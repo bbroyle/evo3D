@@ -7,12 +7,46 @@
 .standardize_msa_input(msa)
 }
 \arguments{
-\item{msa}{A character file path to a FASTA file, a matrix, or an object returned by \code{bio3d::read.fasta()}.}
+\item{msa}{Multiple sequence alignment, provided as:
+\itemize{
+  \item A character string: file path to a FASTA alignment.
+  \item A \code{bio3d} fasta object (from \code{bio3d::read.fasta()}).
+  \item A character matrix with sequences as rows and alignment positions
+        as columns.
+}}
 }
 \value{
-A character matrix with sequences as rows and alignment positions as columns.
+A character matrix with sequences as rows and alignment positions as
+  columns. Guarantees:
+  \itemize{
+    \item All letters are converted to uppercase.
+    \item Row names are present and unique (defaulting to
+          \code{"seq_1"}, \code{"seq_2"}, ... if not).
+  }
 }
 \description{
-Accepts various forms of MSA input (file path, matrix, or bio3d fasta object) and standardizes it into a character matrix.
+Converts multiple sequence alignments provided in different formats into a
+standardized character matrix suitable for evo3D analyses. Accepts FASTA
+files, objects returned by \code{bio3d::read.fasta()}, or pre-loaded matrices.
 }
-\keyword{internal}
+\details{
+This function ensures that input alignments are in uppercase, contain unique
+row names, and have the format \code{[samples × positions]} expected by all
+downstream evo3D modules.
+}
+\examples{
+\dontrun{
+# From FASTA file
+msa_mat <- standardize_msa_input("example_alignment.fasta")
+
+# From bio3d fasta object
+fasta_obj <- bio3d::read.fasta("example_alignment.fasta")
+msa_mat <- standardize_msa_input(fasta_obj)
+
+# From pre-loaded matrix (rows ~ samples, aligned positions ~ columns)
+fasta_obj <- bio3d::read.fasta("example_alignment.fasta")
+my_matrix <- fasta_obj$ali
+msa_mat <- standardize_msa_input(my_matrix)
+}
+
+}

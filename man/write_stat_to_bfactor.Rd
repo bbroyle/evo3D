@@ -2,7 +2,7 @@
 % Please edit documentation in R/ANALYSIS_UTILS.R
 \name{write_stat_to_bfactor}
 \alias{write_stat_to_bfactor}
-\title{Write Selection Statistics to PDB B-Factors (Codon-Based Mapping)}
+\title{write selection stats to pdb b-factors}
 \usage{
 write_stat_to_bfactor(
   evo3d_results,
@@ -11,32 +11,35 @@ write_stat_to_bfactor(
   outfile = "test.pdb",
   mapped_chains_only = TRUE,
   scale_up_pi = FALSE,
-  adjust_NA_stats = -10
+  adjust_NA_stats = -99
 )
 }
 \arguments{
-\item{evo3d_results}{Output from \code{run_evo3d()}, including \code{evo3d_df} and structure info.}
+\item{evo3d_results}{list returned by \code{run_evo3d()}, must include
+\code{evo3d_df} and \code{pdb_info_sets}}
 
-\item{pdb_id}{Numeric index for the target PDB (e.g., 1 for \code{pdb1}). Defaults to 1.}
+\item{pdb_id}{numeric index of pdb to annotate (default 1)}
 
-\item{stat_name}{Name of the statistic column in \code{evo3d_df} to embed (e.g., \code{"tajima"}, \code{"pi"}).}
+\item{stat_name}{character. name of statistic column in \code{evo3d_df}
+(e.g. "tajima", "pi")}
 
-\item{outfile}{Output path for the modified PDB file.}
+\item{outfile}{file path for modified pdb output}
 
-\item{mapped_chains_only}{Logical; if \code{TRUE}, only atoms from chains used in the analysis will be retained.}
+\item{mapped_chains_only}{logical. if TRUE (default), only chains mapped in
+the analysis are retained}
 
-\item{scale_up_pi}{Logical; if \code{TRUE} and \code{stat_name == "pi"}, small values will be scaled for PyMOL visibility.}
+\item{scale_up_pi}{logical. if TRUE and \code{stat_name == "pi"}, rescales
+very small values upward for visibility in pymol}
 
-\item{adjust_NA_stats}{Numeric value to assign to residues with missing statistic values (default: -10).}
+\item{adjust_NA_stats}{numeric value written to residues with missing stats
+(default -99)}
 }
 \value{
-No R return value. A PDB file is written to \code{outfile} with modified B-factor values.
+no R object returned. writes a pdb file to \code{outfile}
+  with b-factors replaced by statistic values
 }
 \description{
-Maps codon-aligned selection statistics (e.g., Tajima's D, nucleotide diversity) to B-factors in a PDB structure file.
-This enables visualization of selection results in molecular viewers such as PyMOL or Chimera.
-}
-\details{
-This function operates on output from \code{run_evo3d()} and uses codon-patch-to-structure mappings to embed
-a selected statistic into the B-factor field of a target PDB.
+embeds codon-aligned selection statistics (e.g. tajima's d, nucleotide diversity)
+into the b-factor field of a pdb file for visualization in pymol, chimera, or
+other structure viewers.
 }

@@ -2,19 +2,23 @@
 % Please edit documentation in R/ANALYSIS_UTILS.R
 \name{write_patch_fastas}
 \alias{write_patch_fastas}
-\title{Write Patch-Level MSA Subsets to FASTA Files}
+\title{write patch-level msa subsets to fasta files}
 \usage{
 write_patch_fastas(msa_subsets, output_dir = "patch_fastas")
 }
 \arguments{
-\item{msa_subsets}{A named list of character matrices (typically from \code{aln_msa_to_pdb()}), each representing one patch.}
+\item{msa_subsets}{named list of character matrices (from \code{aln_msa_to_pdb()}),
+each matrix representing a patch}
 
-\item{output_dir}{Output directory where FASTA files will be saved. Created if it doesn't exist.}
+\item{output_dir}{directory to extract fasta files into (default "patch_fastas").
+created if it does not exist}
 }
 \value{
-Invisibly returns \code{NULL}. Files are written to disk.
+invisibly returns \code{NULL}. fasta files are written to disk
 }
 \description{
-Writes nucleotide MSA subsets for each structural patch to separate FASTA files.
-Useful for downstream tools or manual inspection.
+writes nucleotide msa subsets (one per structural patch) to fasta files.
+files are written to a temporary directory, bundled into a compressed tarball,
+then extracted into the output directory. this ensures safe creation and
+cleanup of intermediate files.
 }

@@ -5,8 +5,16 @@
 # ------------------------------------------ #
 
 
-# .write_patch_fastas() ----
+# write_patch_fastas_slow() ----
 
+#' write patch fasta files
+#'
+#' writes msa subsets to fasta files, one per patch
+#'
+#' @param msa_subsets list of msa matrices (as from \code{extract_msa_subsets()})
+#' @param output_dir directory to write fasta files (default "patch_fastas")
+#'
+#' @keywords internal
 
 write_patch_fastas_slow = function(msa_subsets, output_dir = 'patch_fastas') {
   if (!dir.exists(output_dir)) {
@@ -22,17 +30,23 @@ write_patch_fastas_slow = function(msa_subsets, output_dir = 'patch_fastas') {
   }
 }
 
+# write_patch_fastas() ----
 
-#' Write Patch-Level MSA Subsets to FASTA Files
+#' write patch-level msa subsets to fasta files
 #'
-#' Writes nucleotide MSA subsets for each structural patch to separate FASTA files.
-#' Useful for downstream tools or manual inspection.
+#' writes nucleotide msa subsets (one per structural patch) to fasta files.
+#' files are written to a temporary directory, bundled into a compressed tarball,
+#' then extracted into the output directory. this ensures safe creation and
+#' cleanup of intermediate files.
 #'
-#' @param msa_subsets A named list of character matrices (typically from \code{aln_msa_to_pdb()}), each representing one patch.
-#' @param output_dir Output directory where FASTA files will be saved. Created if it doesn't exist.
+#' @param msa_subsets named list of character matrices (from \code{aln_msa_to_pdb()}),
+#'   each matrix representing a patch
+#' @param output_dir directory to extract fasta files into (default "patch_fastas").
+#'   created if it does not exist
 #'
-#' @return Invisibly returns \code{NULL}. Files are written to disk.
+#' @return invisibly returns \code{NULL}. fasta files are written to disk
 #' @export
+
 write_patch_fastas <- function(msa_subsets, output_dir = "patch_fastas") {
   temp_dir <- tempfile("patch_fastas_")
   dir.create(temp_dir)
@@ -60,43 +74,68 @@ write_patch_fastas <- function(msa_subsets, output_dir = "patch_fastas") {
   unlink(tar_path)
 }
 
-
 # block entropy ----
-#block_entropy = function(x){
-  # take a sweet of haplotypes (msa_subsets) #
-  # compute a table of frequencies #
-  # compute entropy #
 
-  # drop sequences with non-nuc characters (X, ambigous, gaps) #
+#' compute block entropy
+#'
+#' calculates shannon entropy across haplotypes in an msa subset.
+#' optionally translates nucleotide codons to amino acids first.
+#'
+#' @param x character matrix or vector of aligned sequences
+#' @param translate logical. if TRUE (default), translate nucleotide codons
+#'   to amino acids before computing entropy
+#'
+#' @return numeric shannon entropy value (bits, log base 2)
+#' @export
 
-#  tab = table(x)
-#  p = tab / sum(tab)
-#  entropy = -sum(p * log(p))
-#  return(entropy)
-#}
+block_entropy = function(x, translate = TRUE){
+    # take a suite of haplotypes (msa_subsets) #
+    # compute a table of frequencies #
+    # compute entropy #
 
+    # translate sequence #
+    if(translate){
+      x = apply(x, 1, function(seq) {
+        seq = seqinr::translate(seq)
+        paste(seq, collapse = '')
+      })
+    }
 
+    # remove haplotypes with gaps and non AA characters #
+    # 9.22.25 need to adjust if not translating #
+    aavec = '[^AVILMWYFSTNQCGPRHKDE]'
+    x = x[!grepl(aavec, x)]
 
+    # compute shannon entropy #
+    tab = table(x)
+    p = tab / sum(tab)
+    entropy = -sum(p * log2(p)) # 9.22.25 changed to log2 from log #
 
+    return(entropy)
+  }
 
 # .write_patch_pymol() ----
 
-#' Generate PyMOL Selection and Coloring Commands for Structural Patches
+#' write pymol commands for patches
 #'
-#' Converts structural residue patches into PyMOL command strings for selection, coloring, and centroid annotation.
-#' Each patch is assigned a unique selection (e.g., \code{patch_1}) and a randomly shuffled color.
+#' generates pymol command strings to visualize structural patches and centroids.
+#' each patch gets a unique selection (patch_1, patch_2, ...) and a random color.
+#' centroid residues are grouped and colored black.
 #'
-#' These commands can be copied directly into a PyMOL session to visualize surface patches and their centroids.
+#' @param patches data frame with at least:
+#'   \itemize{
+#'     \item \code{patch} – residue groups formatted "resno_chain"
+#'     \item \code{residue_id} – ids of centroid residues
+#'   }
 #'
-#' @param patches A data frame containing at least \code{patch} (residue groups, formatted as "residue_chain") and \code{residue_id} columns.
-#'
-#' @return A named list of character vectors:
-#' \describe{
-#'   \item{patches}{PyMOL \code{select} statements for each structural patch.}
-#'   \item{colors}{PyMOL \code{color} commands to visually differentiate patches.}
-#'   \item{centroid}{A \code{select} and \code{color} command to highlight centroid residues in black.}
-#' }
+#' @return named list of character vectors:
+#'   \itemize{
+#'     \item \code{patches} – pymol \code{select} commands for each patch
+#'     \item \code{colors} – pymol \code{color} commands to assign colors
+#'     \item \code{centroid} – commands to select and color centroids black
+#'   }
 #' @export
+
 write_patch_pymol = function(patches){
   # expecting a data.frame with patch column #
   # patches will be converted to pymol selection commands
@@ -169,26 +208,31 @@ write_patch_pymol = function(patches){
 
 # .write_stat_to_bfactor() ----
 
-#' Write Selection Statistics to PDB B-Factors (Codon-Based Mapping)
+#' write selection stats to pdb b-factors
 #'
-#' Maps codon-aligned selection statistics (e.g., Tajima's D, nucleotide diversity) to B-factors in a PDB structure file.
-#' This enables visualization of selection results in molecular viewers such as PyMOL or Chimera.
+#' embeds codon-aligned selection statistics (e.g. tajima's d, nucleotide diversity)
+#' into the b-factor field of a pdb file for visualization in pymol, chimera, or
+#' other structure viewers.
 #'
-#' This function operates on output from \code{run_evo3d()} and uses codon-patch-to-structure mappings to embed
-#' a selected statistic into the B-factor field of a target PDB.
+#' @param evo3d_results list returned by \code{run_evo3d()}, must include
+#'   \code{evo3d_df} and \code{pdb_info_sets}
+#' @param pdb_id numeric index of pdb to annotate (default 1)
+#' @param stat_name character. name of statistic column in \code{evo3d_df}
+#'   (e.g. "tajima", "pi")
+#' @param outfile file path for modified pdb output
+#' @param mapped_chains_only logical. if TRUE (default), only chains mapped in
+#'   the analysis are retained
+#' @param scale_up_pi logical. if TRUE and \code{stat_name == "pi"}, rescales
+#'   very small values upward for visibility in pymol
+#' @param adjust_NA_stats numeric value written to residues with missing stats
+#'   (default -99)
 #'
-#' @param evo3d_results Output from \code{run_evo3d()}, including \code{evo3d_df} and structure info.
-#' @param pdb_id Numeric index for the target PDB (e.g., 1 for \code{pdb1}). Defaults to 1.
-#' @param stat_name Name of the statistic column in \code{evo3d_df} to embed (e.g., \code{"tajima"}, \code{"pi"}).
-#' @param outfile Output path for the modified PDB file.
-#' @param mapped_chains_only Logical; if \code{TRUE}, only atoms from chains used in the analysis will be retained.
-#' @param scale_up_pi Logical; if \code{TRUE} and \code{stat_name == "pi"}, small values will be scaled for PyMOL visibility.
-#' @param adjust_NA_stats Numeric value to assign to residues with missing statistic values (default: -10).
-#'
-#' @return No R return value. A PDB file is written to \code{outfile} with modified B-factor values.
+#' @return no R object returned. writes a pdb file to \code{outfile}
+#'   with b-factors replaced by statistic values
 #' @export
+
 write_stat_to_bfactor = function(evo3d_results, pdb_id = 1, stat_name = 'tajima', outfile = 'test.pdb',
-                                  mapped_chains_only = TRUE, scale_up_pi = FALSE, adjust_NA_stats = -10){
+                                  mapped_chains_only = TRUE, scale_up_pi = FALSE, adjust_NA_stats = -99){
 
   # check if pdb column has pdb1 tags or not #
   multi_run = any(grepl('pdb1', evo3d_results$evo3d_df))
@@ -253,22 +297,34 @@ write_stat_to_bfactor = function(evo3d_results, pdb_id = 1, stat_name = 'tajima'
 }
 
 # run_pegas_three() ----
-#' Calculate Diversity and Neutrality Statistics for MSA Subsets
+
+#' calculate diversity and neutrality stats for msa subsets
 #'
-#' Computes per-patch summary statistics for nucleotide alignments, including nucleotide diversity (\code{pi}),
-#' Tajima's D, and haplotype diversity. Accepts either a single MSA or a list of patch-level MSAs.
+#' computes nucleotide diversity (pi), tajima's d, and haplotype diversity
+#' on nucleotide alignments. accepts a single alignment or a list of
+#' patch-level alignments.
 #'
-#' This function is typically used downstream of \code{aln_msa_to_pdb()} to quantify evolutionary variation
-#' within each structure-informed alignment window.
+#' typically used downstream of \code{aln_msa_to_pdb()} to quantify
+#' variation within structure-informed windows.
 #'
-#' @param msa Either a single nucleotide alignment (matrix or DNAbin) or a named list of alignments (one per patch).
-#' @param residue_df Optional data frame containing at minimum a column \code{msa_subset_id}.
-#'                   If provided, statistics will be merged into this data frame.
-#' @param stat Character vector indicating which statistics to compute. Options: \code{"pi"}, \code{"tajima"}, \code{"hap"}.
+#' @param msa single nucleotide alignment (matrix or DNAbin) or a named list
+#'   of alignments, one per patch
+#' @param residue_df optional data frame with column \code{msa_subset_id};
+#'   if provided, statistics are merged into this data frame
+#' @param stat character vector of statistics to compute.
+#'   options: \code{"pi"}, \code{"tajima"}, \code{"hap"} (default all)
 #'
-#' @return A data frame with one row per alignment window (matching \code{msa_subset_id}),
-#' including columns for each requested statistic.
+#' @return data frame with one row per alignment window (\code{msa_subset_id}),
+#'   including requested columns:
+#'   \itemize{
+#'     \item \code{pi} – nucleotide diversity
+#'     \item \code{tajima} – tajima's d
+#'     \item \code{tajima_pnormal} – normal approximation p-value
+#'     \item \code{tajima_pbeta} – beta distribution p-value
+#'     \item \code{hap} – haplotype diversity
+#'   }
 #' @export
+
 run_pegas_three = function(msa, residue_df = NULL, stat = c('pi', 'tajima', 'hap')) {
 
   # Convert single MSA to list for consistent handling
@@ -328,128 +384,26 @@ run_pegas_three = function(msa, residue_df = NULL, stat = c('pi', 'tajima', 'hap
 
 # calculate_polymorphic_residue() ----
 
-#' Flag Polymorphic Codons and Compute Site Entropy
+#' flag polymorphic codons and compute site entropy
 #'
-#' Translates codon-aligned nucleotide MSAs into amino acids and identifies codon sites with
-#' evidence of amino acid polymorphism. Also calculates per-site Shannon entropy based on amino acid usage.
+#' translates codon-aligned nucleotide msas to amino acids and flags codons
+#' with amino acid polymorphism. also computes shannon entropy per codon
+#' site from amino acid frequencies.
 #'
-#' Works with both single-MSA and extended multi-MSA evo3D results (via \code{msa_info_sets}).
+#' works with single-msa or multi-msa evo3d results.
 #'
-#' @param msa_info_sets A named list of MSA info objects (e.g., \code{msa1}, \code{msa2}, ...) each with \code{msa_mat}.
-#' @param residue_df A data frame of patch residues, typically from \code{aln_msa_to_pdb()}; must include \code{codon} and optionally \code{msa}.
-#' @param valid_aa_only Logical; if \code{TRUE}, only standard amino acids are considered polymorphic (excludes X, *, etc.).
+#' @param msa_info_sets named list of msa info objects (each with \code{msa_mat})
+#' @param residue_df data frame of patch residues (from \code{aln_msa_to_pdb()}),
+#'   must include \code{codon_id}, \code{codon}, and optionally \code{msa}
+#' @param valid_aa_only logical. if TRUE (default), only standard amino acids
+#'   (AVILMWYFSTNQCGPRHKDE) are considered when testing polymorphism
 #'
-#' @return An updated \code{residue_df} with added columns:
-#' \describe{
-#'   \item{polymorphic}{Binary indicator: 1 if codon is polymorphic (multiple amino acids observed), 0 otherwise.}
-#'   \item{site_entropy}{Shannon entropy of amino acid distribution at the codon site.}
-#' }
+#' @return input \code{residue_df} with two added columns:
+#'   \itemize{
+#'     \item \code{polymorphic} – 1 if codon site has >1 amino acid, 0 otherwise
+#'     \item \code{site_entropy} – shannon entropy (bits, log base 2) of aa distribution
+#'   }
 #' @export
-calculate_polymorphic_residue_old = function(msa_info_sets, residue_df, valid_aa_only = TRUE){
-
-  aa_vector = strsplit('AVILMWYFSTNQCGPRHKDE', '')[[1]]
-
-  # is it extended? #
-  if(!'msa' %in% colnames(residue_df)) {
-    # only one info set #
-    msa = msa_info_sets$msa1$msa_mat
-
-    # handle residue_df null later #
-    aa_set = t(apply(msa, 1, seqinr::translate))
-
-    x = apply(aa_set, 2, table)
-
-    # Check polymorphism for each codon position
-    polymorphic = sapply(x, function(pos_table) {
-      if(valid_aa_only) {
-        valid_counts = pos_table[names(pos_table) %in% aa_vector]
-        length(valid_counts[valid_counts > 0]) > 1
-      } else {
-        length(pos_table[pos_table > 0]) > 1
-      }
-    })
-
-    # Calculate Shannon entropy for each position
-    entropy = sapply(x, function(pos_table) {
-      if(valid_aa_only) {
-        valid_counts = pos_table[names(pos_table) %in% aa_vector]
-        valid_counts = valid_counts[valid_counts > 0]
-      } else {
-        valid_counts = pos_table[pos_table > 0]
-      }
-
-      if(length(valid_counts) == 0) return(0)
-
-      freqs = valid_counts / sum(valid_counts)
-      -sum(freqs * log2(freqs))
-    })
-
-    # add to residue_df -- only where there are codons #
-    codon_ro = which(!is.na(residue_df$codon))
-
-    residue_df$polymorphic = NA
-    residue_df$polymorphic[codon_ro] = as.integer(polymorphic)
-
-    residue_df$site_entropy = NA
-    residue_df$site_entropy[codon_ro] = entropy
-  } else {
-    # it is extneded data in which we need to cycle through msas #
-    residue_df$polymorphic = NA
-    residue_df$site_entropy = NA
-
-    msa_ids = unique(residue_df$msa)
-    msa_ids = msa_ids[!is.na(msa_ids)]
-    for(id in msa_ids){
-      msa = msa_info_sets[[id]]$msa_mat
-
-      # handle residue_df null later #
-      aa_set = t(apply(msa, 1, seqinr::translate))
-
-      x = apply(aa_set, 2, table)
-
-      # Check polymorphism for each codon position
-      polymorphic = sapply(x, function(pos_table) {
-        if(valid_aa_only) {
-          valid_counts = pos_table[names(pos_table) %in% aa_vector]
-          length(valid_counts[valid_counts > 0]) > 1
-        } else {
-          length(pos_table[pos_table > 0]) > 1
-        }
-      })
-
-      # Calculate Shannon entropy for each position
-      entropy = sapply(x, function(pos_table) {
-        if(valid_aa_only) {
-          valid_counts = pos_table[names(pos_table) %in% aa_vector]
-          valid_counts = valid_counts[valid_counts > 0]
-        } else {
-          valid_counts = pos_table[pos_table > 0]
-        }
-
-        if(length(valid_counts) == 0) return(0)
-
-        freqs = valid_counts / sum(valid_counts)
-        -sum(freqs * log2(freqs))
-      })
-
-      # add to residue_df -- only where there are codons #
-      codon_ro = which(!is.na(residue_df$codon))
-      msa_ro = which(residue_df$msa == id)
-      codon_ro = intersect(codon_ro, msa_ro)
-      codon_ro = sort(codon_ro)
-
-      residue_df$polymorphic[codon_ro] = as.integer(polymorphic)
-
-      residue_df$site_entropy[codon_ro] = entropy
-
-    }
-  }
-
-  return(
-    residue_df
-  )
-}
-
 
 calculate_polymorphic_residue = function(msa_info_sets, residue_df, valid_aa_only = TRUE){
 
@@ -514,21 +468,25 @@ calculate_polymorphic_residue = function(msa_info_sets, residue_df, valid_aa_onl
 
   }
 }
+
 # calculate_patch_entropy() ----
 
-#' Calculate Mean Amino Acid Entropy per Patch
+#' calculate mean amino acid entropy per patch
 #'
-#' Translates codon-aligned nucleotide MSAs to amino acids and computes mean Shannon entropy
-#' across all codon positions within each patch. This summarizes the overall amino acid diversity
-#' of each structural window.
+#' translates codon-aligned nucleotide msas to amino acids and computes mean
+#' shannon entropy across codon positions in each patch. this summarizes
+#' amino acid diversity within structure-defined windows.
 #'
-#' @param msa Either a single MSA (matrix) or a named list of nucleotide MSAs (one per patch).
-#'            Each should be codon-aligned (i.e., divisible by 3 in width).
-#' @param residue_df Optional data frame with \code{msa_subset_id}; if provided, entropy is merged in.
-#' @param valid_aa_only Logical; if \code{TRUE}, only standard amino acids (no stop/X) are included in entropy calculation.
+#' @param msa single codon-aligned msa (matrix) or a named list of msas (one per patch)
+#' @param residue_df optional data frame with column \code{msa_subset_id};
+#'   if provided, results are merged into this data frame
+#' @param valid_aa_only logical. if TRUE (default), restrict entropy to standard
+#'   amino acids (ignores stop or X)
 #'
-#' @return A data frame with one row per patch (matching \code{msa_subset_id}), including a new column \code{patch_entropy}.
+#' @return data frame with one row per patch (\code{msa_subset_id}),
+#'   including column \code{patch_entropy}
 #' @export
+
 calculate_patch_entropy = function(msa, residue_df = NULL, valid_aa_only = TRUE){
   # Convert single MSA to list for consistent handling
   if (!is.list(msa)) {

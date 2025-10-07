@@ -6,19 +6,56 @@
 # 1. gaps in peptide reference are represented as 'X' -- this helps distinguish from new introduced gaps later in the pipeline #
 # 2. Consensus and most complete reference methods only count valid DNA and AA characters
 #   -- meaning if a DNA column has 25 'R' and 1 'A' the consensus method returns 'A' for that column
-# 3. No attempt is made to salvage ambigious characters 'GG[RBY]' -> 'Glycine'
+# 3. No attempt is made to salvage ambiguous characters 'GG[RBY]' -> 'Glycine'
 #
-# email me: bbroyle@purdue.edu
+# email: bbroyle@purdue.edu
 # --------------------------------------------------------------- #
+
+# .standardize_msa_input() ----
 
 #' Standardize MSA Input
 #'
-#' Accepts various forms of MSA input (file path, matrix, or bio3d fasta object) and standardizes it into a character matrix.
+#' Converts multiple sequence alignments provided in different formats into a
+#' standardized character matrix suitable for evo3D analyses. Accepts FASTA
+#' files, objects returned by \code{bio3d::read.fasta()}, or pre-loaded matrices.
 #'
-#' @param msa A character file path to a FASTA file, a matrix with sequences as rows and alignment positions as columns, or an object returned by \code{bio3d::read.fasta()}.
+#' This function ensures that input alignments are in uppercase, contain unique
+#' row names, and have the format \code{[samples × positions]} expected by all
+#' downstream evo3D modules.
 #'
-#' @return A character matrix with sequences as rows and alignment positions as columns. Letter case is standardized to uppercase, and row names are assigned if not present.
-#' @keywords internal
+#' @param msa Multiple sequence alignment, provided as:
+#'   \itemize{
+#'     \item A character string: file path to a FASTA alignment.
+#'     \item A \code{bio3d} fasta object (from \code{bio3d::read.fasta()}).
+#'     \item A character matrix with sequences as rows and alignment positions
+#'           as columns.
+#'   }
+#'
+#' @return A character matrix with sequences as rows and alignment positions as
+#'   columns. Guarantees:
+#'   \itemize{
+#'     \item All letters are converted to uppercase.
+#'     \item Row names are present and unique (defaulting to
+#'           \code{"seq_1"}, \code{"seq_2"}, ... if not).
+#'   }
+#'
+#' @examples
+#' \dontrun{
+#' # From FASTA file
+#' msa_mat <- standardize_msa_input("example_alignment.fasta")
+#'
+#' # From bio3d fasta object
+#' fasta_obj <- bio3d::read.fasta("example_alignment.fasta")
+#' msa_mat <- standardize_msa_input(fasta_obj)
+#'
+#' # From pre-loaded matrix (rows ~ samples, aligned positions ~ columns)
+#' fasta_obj <- bio3d::read.fasta("example_alignment.fasta")
+#' my_matrix <- fasta_obj$ali
+#' msa_mat <- standardize_msa_input(my_matrix)
+#' }
+#'
+#' @export
+
 .standardize_msa_input = function(msa){
   # Take a variety of msa input types and return standardized matrix #
   # expecting:
@@ -61,18 +98,20 @@
   return(msa)
 }
 
+# .detect_sequence_type() ----
 
 #' Detect Sequence Type
 #'
-#' Determines whether a given sequence is nucleotide or protein based on the proportion of standard nucleotide characters in the first \code{max_len} positions.
+#' determines whether a given sequence is nucleotide or protein based on the proportion of standard nucleotide characters in the first \code{detect_sequence_len} positions.
 #' characters '-' and 'X' are dropped because they do not add information about either sequence type
 #'
-#' @param seq A character string representing a single biological sequence.
-#' @param detect_sequence_threshold Proportion of characters that must be nucleotide-like (A, T, C, G) to classify the sequence as \code{"nucleotide"}. Default is 0.9.
-#' @param detect_sequence_len Maximum number of non-gap '-' or 'X' characters (from the start of the sequence) to consider when computing the proportion. Default is 100.
+#' @param seq a character string representing a single biological sequence
+#' @param detect_sequence_threshold proportion of characters that must be nucleotide-like (A, T, C, G) to classify the sequence as \code{"nucleotide"}. default is 0.8
+#' @param detect_sequence_len maximum number of non-gap '-' or 'X' characters (from the start of the sequence) to consider when computing the proportion. default is 100
 #'
-#' @return A string: either \code{"nucleotide"} or \code{"protein"}.
+#' @return a string: either \code{"nucleotide"} or \code{"protein"}
 #' @keywords internal
+
 .detect_sequence_type <- function(seq, detect_sequence_threshold = 0.8, detect_sequence_len = 100) {
   # check first 100 characters of sequence for nucleotides #
   # if >=90% are ATCG, return nucleotide # ~ similar to muscle approach ~ #
@@ -94,18 +133,28 @@
   return(seq_type)
 }
 
+# .get_reference_sequence() ----
+
 #' Get Reference Sequence from MSA
 #'
-#' Extracts a reference sequence from a multiple sequence alignment (MSA) using one of several strategies: a specified row index, the most complete sequence, or the consensus across all sequences.
-#' Consensus is built from most frequent ATCG for nucleotide or 20 standardize amino acids for protein data. If none of these characters are found position becomes 'X'
+#' extracts a reference sequence from a multiple sequence alignment (MSA) using one of three strategies:
+#' a specified row index, the most complete sequence, or the consensus across all sequences.
+#' consensus is built from the most frequent valid characters (ATCG for nucleotide; 20 standard amino acids for protein).
+#' if no valid character is found in a column, the position becomes 'X'.
 #'
-#' @param msa A character matrix of sequences (rows) by alignment positions (columns). Should be standardized using \code{.standardize_msa_input()}.
-#' @param ref_method Either a character string (\code{"most_complete"} or \code{"consensus"}) or a numeric value indicating the row number to use as the reference.
-#' @param force_seq_type Optional. Force sequence type to be either \code{"nucleotide"} or \code{"protein"}; if \code{NULL}, type is auto-detected.
-#' @param ... Additional arguments passed to .detect_sequence_type()
+#' @param msa a character matrix of sequences (rows) by alignment positions (columns).
+#'   should be standardized using \code{.standardize_msa_input()}
+#' @param ref_method either \code{"most_complete"}, \code{"consensus"}, or a numeric row index
+#' @param force_seq_type optional. force sequence type to \code{"nucleotide"} or \code{"protein"}.
+#'   if \code{NULL}, type is auto-detected
+#' @param detect_sequence_threshold proportion of ATCG characters required to classify as nucleotide when auto-detecting. default is 0.8
+#' @param detect_sequence_len maximum number of non-gap '-' or 'X' positions (from the start of the sequence) to consider for auto-detection. default is 100
 #'
-#' @return A list with two elements: \code{ref}, the reference sequence as a named character string, and \code{seq_type}, either \code{"nucleotide"} or \code{"protein"}.
+#' @return a list with two elements:
+#'   \item{ref}{the reference sequence as a named character string}
+#'   \item{seq_type}{sequence type, either \code{"nucleotide"} or \code{"protein"}}
 #' @keywords internal
+
 .get_reference_sequence = function(msa, ref_method = 'consensus', force_seq_type = NULL, detect_sequence_threshold = 0.8, detect_sequence_len = 100){
   # grab the reference sequence based on the method provided #
 
@@ -223,18 +272,22 @@
   return(list(ref = ref, seq_type = seq_type))
 }
 
-#' Translate DNA to Amino Acids
+# .translate_dna_to_protein() ----
+
+#' Translate dna to amino acids
 #'
-#' Translates a DNA sequence to its corresponding amino acid sequence.
-#' Ambiguous positions are represented as 'X'.
+#' translates a dna sequence to its amino acid sequence using \code{seqinr::translate}.
+#' ambiguous triplets (including gaps) are translated as 'X'.
+#' internal stop codons are reported with a message but translation continues.
 #'
-#' @param seq A named character string representing a DNA sequence.
-#' @param frame parameter for seqinr::translate, indicating the reading frame (0, 1, or 2).
-#' @param sens parameter for seqinr::translate, indicating the sense of translation ('F' for forward, 'R' for reverse).
-#' @param numcode parameter for seqinr::translate, indicating the ncbi genetic code to use (default is 1 for standard genetic code).
+#' @param seq a named character string dna sequence
+#' @param frame reading frame (0, 1, or 2). always fixed to 0 in full pipeline but retained here for flexibility
+#' @param sens translation sense ('F' forward, 'R' reverse). always fixed to 'F' in full pipeline
+#' @param numcode ncbi genetic code number to use (default 1, standard code)
 #'
-#' @return A named character string representing the translated amino acid sequence.
+#' @return a named character string of the translated amino acid sequence
 #' @keywords internal
+
 .translate_dna_to_protein = function(seq, frame = 0, sens = 'F', numcode = 1){
 
   # translate (NNN and --- are treated the same 'X')
@@ -258,22 +311,40 @@
   return(pep)
 }
 
-#' Extract Reference and Peptide Sequence from MSA
+# msa_to_ref() ----
+
+#' extract reference and peptide sequence from msa
 #'
-#' Wrapper function that standardizes input, extracts a reference sequence from an MSA, detects or applies a sequence type, and translates the reference to peptide if needed.
+#' wrapper to standardize msa input, extract a reference sequence,
+#' detect or apply sequence type, and translate the reference to peptide if needed.
 #'
-#' @param msa A character file path to a FASTA file, a matrix, or an object returned by \code{bio3d::read.fasta()}.
-#' @param ref_method Reference extraction method: one of \code{"most_complete"}, \code{"consensus"}, or a numeric row index.
-#' @param force_seq_type Optional sequence type: \code{"protein"}, \code{"nucleotide"}, or \code{NULL} to auto-detect.
+#' can be called directly as part of a modular workflow, or internally by
+#' \code{run_evo3d()}, where frame and sens are fixed and only \code{genetic_code}
+#' may be user-specified.
 #'
-#' @return A list with the following elements:
+#' @param msa path to fasta file, a matrix, or an object returned by \code{bio3d::read.fasta()}
+#' @param ref_method method to choose reference: one of \code{"most_complete"},
+#'   \code{"consensus"}, or numeric row index (default "consensus")
+#' @param force_seq_type optional sequence type: \code{"protein"}, \code{"nucleotide"},
+#'   or \code{NULL} to auto-detect (default)
+#' @param verbose integer, print progress messages if > 0
+#' @param detect_sequence_threshold proportion of atcg required to call nucleotide
+#'   when auto-detecting (default 0.8)
+#' @param detect_sequence_len number of leading characters used for detection (default 100)
+#' @param reading_frame reading frame for translation (0,1,2). fixed to 0 in \code{run_evo3d}
+#' @param reading_sens translation sense ('F' forward, 'R' reverse). fixed to 'F' in \code{run_evo3d}
+#' @param genetic_code ncbi genetic code number (default 1, standard code)
+#'
+#' @return a list with
 #' \itemize{
-#'   \item \code{msa_mat}: The standardized alignment matrix.
-#'   \item \code{ref}: The reference sequence (DNA or protein).
-#'   \item \code{pep}: The translated peptide sequence (if nucleotide input).
-#'   \item \code{seq_type}: The detected or specified sequence type.
+#'   \item \code{msa_mat}: standardized alignment matrix
+#'   \item \code{ref}: reference sequence (dna or protein)
+#'   \item \code{pep}: peptide sequence (translated if nucleotide input,
+#'     or reference with '-' replaced by 'X' if protein)
+#'   \item \code{seq_type}: detected or forced sequence type
 #' }
 #' @export
+
 msa_to_ref = function(msa, ref_method = 'consensus', force_seq_type = NULL, verbose = 0,
                       detect_sequence_threshold = 0.8, detect_sequence_len = 100,
                       reading_frame = 0, reading_sens = 'F', genetic_code = 1){
@@ -323,19 +394,4 @@ msa_to_ref = function(msa, ref_method = 'consensus', force_seq_type = NULL, verb
          )
 }
 
-# TESTING -- remove before push #
-if(F){
-aavec = strsplit('AVIL-X', '')[[1]]
-aasamp = sample(aavec, 100, replace = TRUE)
-aamat = matrix(aasamp, ncol = 25, byrow = TRUE)
 
-msa_aa = msa_to_ref(aamat, ref_method = 2, verbose = 1, reading_frame = 0, genetic_code = 1, frame = 0, detect_sequence_threshold = 0.8)
-
-nucvec = strsplit('ATGCATGCX-RU', '')[[1]]
-nucsamp = sample(nucvec, 100, replace = TRUE)
-nucmat = matrix(nucsamp, ncol = 25, byrow = TRUE)
-
-msa_nuc = msa_to_ref(nucmat, ref_method = 2, verbose = 1, reading_frame = 0, genetic_code = 1, frame = 0, detect_sequence_threshold = 0.8)
-msa_nuc
-}
-#
