@@ -541,7 +541,7 @@ show_evo3d_defaults = function(module_name = NULL){
 #' @export
 
 run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_chain = NA,    # how to handle pdb info #
-                     analysis_mode = 'codon', calculate_stats = TRUE, detail_level = 1, verbose = 1, # how to handle analysis
+                     analysis_mode = 'residue', calculate_stats = TRUE, detail_level = 1, verbose = 1, # how to handle analysis
                      restart_run = NULL, user_aln = NULL, # these need work -- how to restart a run?? # -- ... what does user need to give?
                      msa_controls = list(), pdb_controls = list(), aln_controls = list(),
                      stat_controls = list(), output_controls = list()){ # 5 control lists -- msa, pdb (patches), aln_controls -- how to merge, autochain thresh, stats, outputs

@@ -366,6 +366,7 @@
   # Set up codon_id
   aln_table$codon_id = paste0(aln_table$codon, '_', aln_table$msa)
   aln_table$codon_id[is.na(aln_table$codon)] = NA
+  aln_table$codon_id[aln_table$codon == '-'] = NA
 
   # check for gap_map residues #
   gap_ids = aln_table$residue_id[which(aln_table$codon == '-')]

@@ -312,6 +312,9 @@
   # grab a smaller residue df -- only for those with patches #
   resolved_df = residue_df[!is.na(residue_df$codon_patch),]
 
+  # drop gap map from residue_df #
+  residue_df = residue_df[residue_df$codon != '-',]
+
   # CDF / CEF ~ exposure no influence #
   if(patch_mode == 'codon' && !only_exposed_in_patch){
 
@@ -343,6 +346,9 @@
             residue_df$codon_id[residue_df$pdb == pid],
             residue_df$residue_id[residue_df$pdb == pid]
           )
+
+          # ensures gap map (which have been dropped) - dont make dist mat
+          d = d[names(d) %in% names(map)]
 
           # replace names
           names(d) = map[names(d)]
@@ -396,6 +402,9 @@
             residue_df$codon_id[residue_df$pdb == pid],
             residue_df$residue_id[residue_df$pdb == pid]
           )
+
+          # ensures gap map (which have been dropped) - dont make dist mat
+          d = d[names(d) %in% names(map)]
 
           # replace names
           names(d) = map[names(d)]
@@ -484,6 +493,9 @@
             residue_df$residue_id[residue_df$pdb == pid]
           )
 
+          # ensures gap map (which have been dropped) - dont make dist mat
+          d = d[names(d) %in% names(map)]
+
           # replace names
           names(d) = map[names(d)]
           d
@@ -542,6 +554,9 @@
             residue_df$codon_id[residue_df$pdb == pid],
             residue_df$residue_id[residue_df$pdb == pid]
           )
+
+          # ensures gap map (which have been dropped) - dont make dist mat
+          d = d[names(d) %in% names(map)]
 
           # replace names
           names(d) = map[names(d)]
@@ -624,6 +639,9 @@
             residue_df$residue_id[residue_df$pdb == pid]
           )
 
+          # ensures gap map (which have been dropped) - dont make dist mat
+          d = d[names(d) %in% names(map)]
+
           # replace names
           names(d) = map[names(d)]
 
@@ -681,6 +699,9 @@
             residue_df$codon_id[residue_df$pdb == pid],
             residue_df$residue_id[residue_df$pdb == pid]
           )
+
+          # ensures gap map (which have been dropped) - dont make dist mat
+          d = d[names(d) %in% names(map)]
 
           # replace names
           names(d) = map[names(d)]
@@ -835,6 +856,8 @@ collapse_to_codon = function(residue_df, merge_type = 'exposure_distance', merge
 
   ro = which(residue_df$codon == '-')
   if(length(ro)>0){
+
+    # give an id for now - but remove once added back
     residue_df$codon_id[ro] = paste0(
       residue_df$msa[ro], '_', residue_df$pdb[ro], '_', residue_df$residue_id[ro]
     )
@@ -890,6 +913,8 @@ collapse_to_codon = function(residue_df, merge_type = 'exposure_distance', merge
         codon_df[seq(from = insert_at, to = nrow(codon_df)), ]
       )
     }
+
+    codon_df$codon_id[codon_df$codon == '-'] = NA
   }
 
   residue_df$upper_context = NULL
@@ -943,6 +968,7 @@ collapse_to_codon = function(residue_df, merge_type = 'exposure_distance', merge
   # Step 4 - update msa_subset_id ----
   codon_df$msa_subset_id = codon_df$codon_id
   codon_df$msa_subset_id[is.na(codon_df$codon_patch)] = NA
+  codon_df$msa_subset_id[codon_df$codon == '-'] = NA
 
   # STEP 5 handle interfaces ----
   # handle interfaces  -- skipped by above codon based merges #

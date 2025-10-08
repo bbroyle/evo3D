@@ -10,7 +10,7 @@ run_evo3d(
   chain = "auto",
   interface_chain = NA,
   occlusion_chain = NA,
-  analysis_mode = "codon",
+  analysis_mode = "residue",
   calculate_stats = TRUE,
   detail_level = 1,
   verbose = 1,
