@@ -72,13 +72,28 @@ msa_subs <- results$final_msa_subsets
 write_patch_fastas(msa_subs, output_dir = "testing")
 ```
 
-Let's quikly cover run_evo3d() results. Results are in a structured list -- with the following entries:<br/>
-$evo3d_df -- dataframe holding msa to pdb alignment information, 3D codon patch information, and any calculated statistics<br/>
-$final_msa_subsets -- list of msa subsets named by their ancoring codon <br/>
-$msa_info_sets -- outputs of module 1 msa_to_ref()<br/>
-$pdb_info_sets -- outputs of module 2 pdb_to_patch()<br/>
-$aln_info_sets -- outputs of module 3 aln_msa_to_pdb()<br/>
-$call_info -- meta data of the analysis run inlcuding 3D sliding window paramters and msa and pdb file paths
+## `run_evo3d()` output
+
+`run_evo3d()` returns a structured list with the following components:
+
+- **`evo3d_df`**  
+  Data frame containing MSA–PDB alignment information, structure-defined codon patches, and any computed statistics.
+
+- **`final_msa_subsets`**  
+  List of patch-level MSA subsets (“spatial haplotypes”), named by their anchoring (central) codon.
+
+- **`msa_info_sets`**  
+  Outputs from the MSA preprocessing step (`msa_to_ref()`).
+
+- **`pdb_info_sets`**  
+  Outputs from structure parsing and patch construction (`pdb_to_patch()`).
+
+- **`aln_info_sets`**  
+  Outputs from MSA–structure alignment and patch mapping (`aln_msa_to_pdb()`).
+
+- **`call_info`**  
+  Metadata describing the analysis run, including input file paths and 3D patch parameters.
+
 
 ## Tunable workflow
 
