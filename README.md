@@ -3,7 +3,7 @@
 **Structure-informed evolutionary analysis in R**
 
 evo3D is a newly released package.  
-If you encounter issues, have suggestions, or would like to request new features, please open an issue — community feedback is appreciated.
+If you encounter issues, have suggestions, or would like to request new features, please open an issue - community feedback is appreciated.
 
 <img src="man/figures/evo3d_hex_b.png" width="200"/>
 
