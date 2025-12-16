@@ -2,7 +2,7 @@
 % Please edit documentation in R/PDB_MODULE.R
 \name{.identify_patches}
 \alias{.identify_patches}
-\title{identify surface patches}
+\title{Identify surface patches}
 \usage{
 .identify_patches(
   dist_mat,
@@ -13,28 +13,38 @@
 )
 }
 \arguments{
-\item{dist_mat}{residue–residue distance matrix}
+\item{dist_mat}{Numeric residue–residue distance matrix, with residue IDs
+as row and column names.}
 
-\item{residue_df}{data frame of residues with rsa, sasa, and exposure info}
+\item{residue_df}{Data frame of residues containing exposure information
+(including \code{exposed}, \code{rsa}, and/or \code{sasa}).}
 
-\item{dist_cutoff}{numeric. maximum distance in angstroms for neighbors (default 15)}
+\item{dist_cutoff}{Numeric. Maximum distance (in Å) for including neighboring
+residues in a patch (default \code{15}).}
 
-\item{max_patch}{numeric. optional maximum number of neighbors per patch (default NA = unlimited)}
+\item{max_patch}{Numeric. Optional maximum number of residues per patch
+(default \code{NA}, unlimited).}
 
-\item{only_exposed_in_patch}{logical. if TRUE (default), restricts patch members to exposed residues only}
+\item{only_exposed_in_patch}{Logical. If \code{TRUE} (default), restricts
+patch members to residues marked as exposed.}
 }
 \value{
-input \code{residue_df} with new columns:
+The input \code{residue_df} with additional columns:
 \itemize{
-  \item \code{patch} – string of neighbor residue ids joined by '+'
-  \item \code{patch_len} – number of residues in patch
-  \item \code{max_dist} – maximum pairwise distance among patch members
+  \item \code{patch}: concatenated residue IDs for each patch, joined by \code{+}
+  \item \code{patch_len}: number of residues in the patch
+  \item \code{max_dist}: maximum distance (Å) from the seed residue to any
+    patch member
 }
 }
 \description{
-defines residue patches by growing neighborhoods around exposed seed residues
-using rsa, sasa, and spatial distance criteria. seeds are always taken from
-residues marked \code{exposed}; if cutoffs are set to 0, all residues qualify
-as seeds.
+Defines residue-level surface patches by growing spatial neighborhoods
+around exposed seed residues. Patches are constructed using residue–residue
+distances, with optional constraints on maximum distance and patch size.
+}
+\details{
+Seed residues are always those marked as \code{exposed} in
+\code{residue_df}. If exposure thresholds upstream are permissive (e.g.,
+cutoffs set to zero), all residues may qualify as seeds.
 }
 \keyword{internal}

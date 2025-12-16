@@ -37,7 +37,7 @@ downstream evo3D modules.
 \examples{
 \dontrun{
 # From FASTA file
-msa_mat <- standardize_msa_input("example_alignment.fasta")
+msa_mat <- .standardize_msa_input("example_alignment.fasta")
 
 # From bio3d fasta object
 fasta_obj <- bio3d::read.fasta("example_alignment.fasta")
@@ -46,7 +46,7 @@ msa_mat <- standardize_msa_input(fasta_obj)
 # From pre-loaded matrix (rows ~ samples, aligned positions ~ columns)
 fasta_obj <- bio3d::read.fasta("example_alignment.fasta")
 my_matrix <- fasta_obj$ali
-msa_mat <- standardize_msa_input(my_matrix)
+msa_mat <- .standardize_msa_input(my_matrix)
 }
 
 }

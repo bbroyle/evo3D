@@ -17,8 +17,7 @@ aln_msa_to_pdb(
   max_patch,
   dist_cutoff,
   only_exposed_in_patch,
-  merge_type = "hold",
-  merge_exposure = "hold"
+  user_aln = NULL
 )
 }
 \arguments{
@@ -61,11 +60,10 @@ patches. Default \code{NULL} (no cutoff).}
 \item{only_exposed_in_patch}{Logical; if \code{TRUE}, restricts patch
 rebuilding to exposed residues only.}
 
-\item{merge_type}{Character; strategy for merging overlapping patches.
-Typically \code{"hold"}. Reserved for internal use.}
-
-\item{merge_exposure}{Character; strategy for merging exposure information.
-Typically \code{"hold"}. Reserved for internal use.}
+\item{user_aln}{Optional alignment object previously returned by
+\code{aln_msa_to_pdb()} that has been manually modified (e.g., via
+\code{adjust_aln()}). If provided, this alignment is reused instead of
+recomputing a new alignment.}
 }
 \value{
 A list with three components:

@@ -22,7 +22,7 @@ interface_chain}
 }
 \value{
 list with standardized msa, pdb, interface_chain, occlusion_chain,
-  and a run_grid data frame of msa–pdb–chain combinations
+  and a run_grid data frame of msa-db-chain combinations
 }
 \description{
 expands combinations of msa and pdb inputs into a run grid for multi-model,

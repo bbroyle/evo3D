@@ -2,39 +2,44 @@
 % Please edit documentation in R/PDB_MODULE.R
 \name{.calculate_residue_distance}
 \alias{.calculate_residue_distance}
-\title{Residue-wise Distance Matrix}
+\title{Residue-wise distance matrix}
 \usage{
 .calculate_residue_distance(
   pdb,
   chain = NA,
-  distance_method = "all",
+  distance_method = "ca",
   in_module = FALSE
 )
 }
 \arguments{
-\item{pdb}{A PDB object from \code{bio3d}, or file path passed to
+\item{pdb}{A PDB object from \pkg{bio3d}, or a file path passed to
 \code{.standardize_pdb_input()} if \code{in_module = FALSE}.}
 
-\item{chain}{Optional character vector of chain IDs to retain. Default NA
-keeps all chains.}
+\item{chain}{Optional character vector of chain identifiers. If \code{NA},
+all protein chains are retained.}
 
-\item{distance_method}{Character string, one of \code{"all"}, \code{"ca"},
-\code{"backbone"}, or \code{"sidechain"}. Controls which atoms are used for
-distance calculation. Default \code{"all"}.}
+\item{distance_method}{Character string specifying the residue distance
+definition. One of:
+\itemize{
+  \item \code{"ca"}: Cα–Cα distances.
+  \item \code{"all"}: minimum inter-atomic distance between residues.
+  \item \code{"centroid"}: Euclidean distance between residue centroids.
+}}
 
 \item{in_module}{Logical. If \code{TRUE}, assumes \code{pdb} has already been
 standardized (default \code{FALSE}).}
 }
 \value{
-A symmetric square numeric matrix of residue–residue distances,
-  with residue IDs as row and column names.
+A symmetric numeric matrix of residue–residue distances, with
+  residue identifiers as row and column names.
 }
 \description{
-Computes a pairwise Euclidean distance matrix between residues of a PDB structure.
-Distances are based on atom coordinates, grouped by residue, with options to
-restrict to backbone, sidechain, or Cα atoms.
+Computes a pairwise Euclidean distance matrix between residues of a PDB
+structure. Distances are calculated from atomic coordinates and aggregated
+at the residue level using one of several supported methods.
 }
 \details{
-Called internally by patch-definition and exposure functions.
+This function is used internally by patch-definition, exposure, and
+structure-based analysis routines in evo3D.
 }
 \keyword{internal}

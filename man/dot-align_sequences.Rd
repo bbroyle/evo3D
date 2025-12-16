@@ -2,36 +2,32 @@
 % Please edit documentation in R/ALN_MODULE.R
 \name{.align_sequences}
 \alias{.align_sequences}
-\title{Align Reference and Structure Sequences}
+\title{Align reference and structure sequences}
 \usage{
-.align_sequences(sequences, user_supplied_alignment = NA)
+.align_sequences(sequences, submat = "BLOSUM65")
 }
 \arguments{
-\item{sequences}{A named character vector of length two, containing the
-reference sequence first and the structure-derived sequence second.
-Example: \code{c(ref = "MKT...", pdb = "MK-...")}.}
+\item{sequences}{Named character vector of length two containing the reference
+sequence and the structure-derived sequence. Names are used only to preserve
+input order (e.g., \code{c(ref = "MKT...", pdb = "MK...")}).}
 
-\item{user_supplied_alignment}{Reserved for future use. Currently ignored.}
+\item{submat}{Character; substitution matrix used for alignment. One of
+\code{"BLOSUM30"}, \code{"BLOSUM40"}, \code{"BLOSUM50"}, \code{"BLOSUM65"},
+\code{"BLOSUM80"}, or \code{"Gonnet"} (default \code{"BLOSUM65"}).}
 }
 \value{
-A list with components:
+List with:
 \describe{
-  \item{aln_mat}{A two-column character matrix with aligned reference and
-    structure sequences.}
-  \item{coverage}{Named list of coverage ranges (see
-    \code{.calculate_coverage}). Includes mismatch ranges if applicable.}
+  \item{aln_mat}{Two-column character matrix with aligned sequences. Columns are
+  \code{ref_aa} and \code{pdb_aa}.}
 }
 }
 \description{
-Aligns a reference amino acid sequence against a structure-derived sequence
-using ClustalOmega (via the \pkg{msa} package, default BLOSUM65). Computes
-positional mismatches and summarizes aligned coverage ranges.
+Align a reference amino acid sequence against a structure-derived sequence
+using Clustal Omega via the \pkg{msa} package.
 }
 \details{
-Intended for internal use in mapping reference sequences to PDB-derived
+Intended for internal use when mapping reference sequences to PDB-derived
 sequences prior to downstream patch analyses.
-}
-\seealso{
-\code{.calculate_coverage}
 }
 \keyword{internal}

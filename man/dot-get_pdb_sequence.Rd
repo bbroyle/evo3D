@@ -2,16 +2,16 @@
 % Please edit documentation in R/PDB_MODULE.R
 \name{.get_pdb_sequence}
 \alias{.get_pdb_sequence}
-\title{Extract PDB Sequences}
+\title{Extract PDB chain sequences}
 \usage{
 .get_pdb_sequence(pdb, chain = NA, in_module = FALSE)
 }
 \arguments{
-\item{pdb}{A PDB object from \code{bio3d}, or file path passed to
+\item{pdb}{A PDB object from \pkg{bio3d}, or a file path passed to
 \code{.standardize_pdb_input()} if \code{in_module = FALSE}.}
 
-\item{chain}{Optional character vector of chain IDs. If \code{NA}, all
-protein chains are extracted.}
+\item{chain}{Optional character vector of chain identifiers. If \code{NA},
+sequences for all protein chains are extracted.}
 
 \item{in_module}{Logical. If \code{TRUE}, assumes \code{pdb} has already been
 standardized (default \code{FALSE}).}
@@ -21,8 +21,7 @@ A named character vector of amino acid sequences, one per chain.
 }
 \description{
 Retrieves amino acid sequences for one or more chains from a PDB structure.
-}
-\details{
-Called internally by PDB alignment and chain-detection functions.
+This function is used internally by PDB alignment and chain-detection
+utilities.
 }
 \keyword{internal}

@@ -30,7 +30,7 @@
   codon_order = unique(df$codon_id)
 
   # keep msa and codon along with codon_id
-  base = aggregate(
+  base = stats::aggregate(
     list(ref_aa = df$ref_aa,
          msa     = df$msa,
          codon   = df$codon),
@@ -43,12 +43,12 @@
   for (p in pdb_ids) {
     sub = df[df$pdb == p, ]
 
-    aa = aggregate(list(val = sub$pdb_aa),
+    aa = stats::aggregate(list(val = sub$pdb_aa),
                    by = list(codon_id = sub$codon_id),
                    FUN = function(x) paste(x, collapse = "+"))
     names(aa)[2] = paste0(p, "_pdb_aa")
 
-    res = aggregate(list(val = sub$residue_id),
+    res = stats::aggregate(list(val = sub$residue_id),
                     by = list(codon_id = sub$codon_id),
                     FUN = function(x) paste(x, collapse = "+"))
     names(res)[2] = paste0(p, "_residue_id")
@@ -63,7 +63,7 @@
   #                FUN = length)
 
   # number of resolved (non-gap) residues per codon
-  res = aggregate(list(resolved = df$pdb_aa),
+  res = stats::aggregate(list(resolved = df$pdb_aa),
                   by = list(codon_id = df$codon_id),
                   FUN = function(x) sum(x != "-"))
 
@@ -342,7 +342,7 @@
           }
 
           # replace ids with codon names #
-          map = setNames(
+          map = stats::setNames(
             residue_df$codon_id[residue_df$pdb == pid],
             residue_df$residue_id[residue_df$pdb == pid]
           )
@@ -398,7 +398,7 @@
           }
 
           # replace ids with codon names #
-          map = setNames(
+          map = stats::setNames(
             residue_df$codon_id[residue_df$pdb == pid],
             residue_df$residue_id[residue_df$pdb == pid]
           )
@@ -488,7 +488,7 @@
           d = d[names(d) %in% exp]
 
           # replace ids with codon names #
-          map = setNames(
+          map = stats::setNames(
             residue_df$codon_id[residue_df$pdb == pid],
             residue_df$residue_id[residue_df$pdb == pid]
           )
@@ -550,7 +550,7 @@
           d = d[names(d) %in% exp]
 
           # replace ids with codon names #
-          map = setNames(
+          map = stats::setNames(
             residue_df$codon_id[residue_df$pdb == pid],
             residue_df$residue_id[residue_df$pdb == pid]
           )
@@ -634,7 +634,7 @@
           }
 
           # replace ids with codon names #
-          map = setNames(
+          map = stats::setNames(
             residue_df$codon_id[residue_df$pdb == pid],
             residue_df$residue_id[residue_df$pdb == pid]
           )
@@ -695,7 +695,7 @@
           }
 
           # replace ids with codon names #
-          map = setNames(
+          map = stats::setNames(
             residue_df$codon_id[residue_df$pdb == pid],
             residue_df$residue_id[residue_df$pdb == pid]
           )
@@ -921,7 +921,7 @@ collapse_to_codon = function(residue_df, merge_type = 'exposure_distance', merge
   residue_df$lower_context = NULL
 
   # STEP 1 -- update exposure based on merge_exposure threshold ----
-  exp_count = aggregate(exposed ~ codon_id, data = residue_df, FUN = sum , na.rm = T)
+  exp_count = stats::aggregate(exposed ~ codon_id, data = residue_df, FUN = sum , na.rm = T)
   codon_df$exposed_count = exp_count$exposed[match(codon_df$codon_id, exp_count$codon_id)]
 
   # check against threshold (force NA to FALSE after checking against threshold)

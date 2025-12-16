@@ -2,27 +2,47 @@
 % Please edit documentation in R/PDB_MODULE.R
 \name{.identify_interface}
 \alias{.identify_interface}
-\title{identify interface contacts}
+\title{Identify interface contacts}
 \usage{
-.identify_interface(pdb, chain = NULL, interface_chain = NULL, dist_cutoff = 5)
+.identify_interface(
+  pdb,
+  chain = NA,
+  interface_chain = NA,
+  dist_cutoff = 5,
+  in_module = FALSE
+)
 }
 \arguments{
-\item{pdb}{bio3d pdb object}
+\item{pdb}{A \pkg{bio3d} \code{"pdb"} object, or a file path if
+\code{in_module = FALSE} (standardized via \code{.standardize_pdb_input()}).}
 
-\item{chain}{chain id(s) of interest}
+\item{chain}{Chain identifier(s) defining the primary set of residues.
+May be a vector and/or a compact string (e.g. \code{"ABC"}).}
 
-\item{interface_chain}{chain id(s) to test for contacts with}
+\item{interface_chain}{Chain identifier(s) defining the interacting set.
+May be a vector and/or a compact string. If \code{NA}, returns
+\code{name = NA} and \code{interf = NA}.}
 
-\item{dist_cutoff}{maximum angstrom distance for contact (default 5)}
+\item{dist_cutoff}{Numeric. Maximum distance (Å) for a contact (default \code{5}).}
+
+\item{in_module}{Logical. If \code{TRUE}, assumes \code{pdb} and chain inputs
+have already been standardized/split (default \code{FALSE}).}
 }
 \value{
-list with:
+A list with:
 \itemize{
-  \item \code{name} – interface name string of the form "interface_[chain]_[interface_chain(s)]"
-  \item \code{interf} – concatenated residue ids (e.g. "35_A_+42_A_") of contacting residues
+  \item \code{name}: interface label of the form
+    \code{"interface_[chain]_[interface_chain]"}
+  \item \code{interf}: \code{+}-concatenated residue identifiers for contacting residues
 }
 }
 \description{
-finds residue contacts between two chain sets in a pdb structure using atom distances.
+Identifies residue contacts between two chain sets in a structure using
+atom–atom distance criteria (via \code{bio3d::binding.site()}).
+}
+\details{
+Chains are first trimmed to protein atoms and hydrogens are removed. Contacting
+residues from \code{chain} are returned as a \code{+}-concatenated string of
+residue identifiers.
 }
 \keyword{internal}

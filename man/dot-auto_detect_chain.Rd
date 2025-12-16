@@ -2,43 +2,37 @@
 % Please edit documentation in R/ALN_MODULE.R
 \name{.auto_detect_chain}
 \alias{.auto_detect_chain}
-\title{auto detect matching pdb chain}
+\title{Automatically detect matching PDB chains by k-mer coverage}
 \usage{
 .auto_detect_chain(pep, pdb, k = 4, in_module = F)
 }
 \arguments{
-\item{pep}{amino acid sequence as a single character string}
+\item{pep}{Amino acid sequence as a single character string.}
 
-\item{pdb}{pdb structure input. can be a file path to a pdb, a pdb object
-from \code{bio3d::read.pdb()}, or a standardized pdb from \code{standardize_pdb_input()}.
-cannot be a pdb id alone.}
+\item{pdb}{PDB structure input; may be a file path, a \code{bio3d} PDB object,
+or a standardized PDB object. A PDB identifier alone is not supported.}
 
-\item{k}{integer k-mer size used for coverage calculation (default 4)}
+\item{k}{Integer; k-mer size used for coverage calculation (default 4).}
 
-\item{in_module}{logical, for internal use. if TRUE, skips pdb validation
-(default FALSE)}
+\item{in_module}{Logical; internal flag. If \code{TRUE}, skips PDB validation
+steps handled upstream (default \code{FALSE}).}
 }
 \value{
-a named numeric vector of k-mer coverage values for each pdb chain,
-sorted in descending order. names correspond to pdb chain identifiers.
+Named numeric vector of k-mer coverage scores for each PDB chain,
+  sorted in descending order. Names correspond to chain identifiers.
 }
 \description{
-compare a peptide sequence to each chain in a pdb structure
-and return similarity scores based on k-mer coverage.
-higher scores indicate closer matches between the query sequence and pdb chain.
+Compare a peptide sequence against each chain in a PDB structure and return
+similarity scores based on k-mer coverage. Higher scores indicate closer
+correspondence between the query peptide and a given PDB chain.
 }
 \details{
-coverage is defined as the fraction of pdb k-mers also present in the peptide sequence.
-}
-\examples{
-\dontrun{
-pep = "MKTFFVAGVILLLVATATGVHS"
-pdb = standardize_pdb_input("my_structure.pdb")
-auto_detect_chain(pep, pdb)
-}
+This function is intended for internal use in automatic chain-mapping
+workflows.
 
+
+Coverage is defined as the fraction of k-mers in a PDB chain sequence that
+are also present in the query peptide sequence. This measure is asymmetric
+and reflects how well a PDB chain is represented within the query.
 }
-\seealso{
-\code{\link{find_matching_structures}}, \code{\link{standardize_pdb_input}},
-  \code{bio3d::read.pdb}
-}
+\keyword{internal}

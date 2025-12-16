@@ -11,31 +11,35 @@
     default_msa_controls = list(
       ref_method = 'consensus', # ** ref_method can be numeric, least_gap, or consensus -- see MSA_MODULE
       force_seq_type = NULL, # ** can be protein or nucleic acid -- NULL means to autodetect
-      detect_sequence_threshold = 0.8,
-      detect_sequence_len = 100,
+      detect_sequence_threshold = 0.8,  # thinking to remove
+      detect_sequence_len = 100,        # thinking to remove
       genetic_code = 1 # ** seqinr can use different genebank codes
     ),
 
     default_pdb_controls = list(
-      distance_method = 'ca',  # ** ca atom - can be side chain, backbone, ca, all, centroid
-      drop_incomplete_residue = TRUE, # ** for dssp style sasa -- drop incomplete residues
-      rsa_method = 'rose',         # ** sasa to rsa
-      dist_cutoff = 15,      # **  angstrom distance
-      rsa_cutoff = 0.1,      # for surface def
-      sasa_cutoff = NA,    # if using sasa
-      use_rsa_sasa = 'or',         # if both provided how to use
-      only_exposed_in_patch = TRUE,      # seed is exposed but patch can be also buried
-      max_patch = NA,            # max aa in patch
-      interface_dist_cutoff = 5,    # interface dist cut --
-      force_file_type = NULL, # can be pdb or cif
+      distance_method = 'ca',  # ** make ca, all, or centroid
+      drop_incomplete_residue = TRUE, # thinking to remove
+      rsa_method = 'rose',         # ** rose, tien...
+      dist_cutoff = 15,      # **  angstrom distance (can be NA)
+      rsa_cutoff = 0.1,      # should adapt to range; single value treat as above, double treat as range
+      sasa_cutoff = NA,    # should adapt to range; single value treat as above, double treat as range
+      use_rsa_sasa = 'or',         # if both provided how to use have to be X and Y or x or Y
+      only_exposed_in_patch = TRUE,      # seed is exposed but patch can be also buried (complicated)
+      max_patch = NA,            # max aa in patch -- better name is fixed_count
+      interface_dist_cutoff = 5,    # interface dist cut -- (can include buried residues)
+      force_file_type = NULL, # can be pdb or cif -- only works for one -- should it be multi
       patch_mode = 'codon'  # will codons be duplicated and count as residues or should codons define windows -- used in rebuild_patches()
     ),
 
     default_aln_controls = list(
-      use_sample_names = TRUE,     # actually used in in extend_msa() - stored here
+      use_sample_names = TRUE,     # actually used in in extract msa subsets() - stored here
       auto_chain_threshold = 0.2,   # also used before aln module but conceptually fits
-      kmer_size = 4,              # kmer size for auto chain mapping
-      #next_chain_tolerance = 0.8, # used with autochain to keep good chain matches
+      kmer_size = 4              # kmer size for auto chain mapping (adjust or no)
+      #next_chain_tolerance = 0.8, # used with autochain to keep good chain matches ** needed **
+
+    ),
+
+    default_collapse_controls = list(
       merge_type = 'exposure_distance',    # change this to union / by_distance / by_exposure_distance
       merge_exposure = 0.5       # how often does a residue need exposure to count as exposed in codon collapse
     ),
@@ -44,9 +48,9 @@
       calc_pi = FALSE,
       calc_tajima = FALSE,
       calc_hap = FALSE,
-      calc_polymorphic = TRUE,
-      calc_patch_entropy = FALSE,
       calc_site_entropy = FALSE, # needs flag
+      calc_avg_patch_entropy = FALSE,
+      calc_block_entropy = FALSE,
       valid_aa_only = TRUE # removes non-standard amino acids from stats (entropy and polymorphic)
     ),
 
@@ -84,6 +88,7 @@
                             'aln' = .evo3d_defaults$default_aln_controls,
                             'stat' = .evo3d_defaults$default_stat_controls,
                             'output' = .evo3d_defaults$default_output_controls,
+                            'collapse' = .evo3d_defaults$default_collapse_controls
                             )
 
   # check keys sent by user ----
@@ -99,7 +104,7 @@
 
   # update and return list ----
   return(
-    modifyList(default_controls, user_controls)
+    utils::modifyList(default_controls, user_controls)
   )
 
 }
@@ -119,7 +124,7 @@
 
 show_evo3d_defaults = function(module_name = NULL){
   # module options #
-  modules = c("msa", "pdb", "aln", "stat", "output")
+  modules = c("msa", "pdb", "aln", "stat", "output", "collapse")
 
   # for nice print formatting #
   nice_print = function(name) {
@@ -127,7 +132,7 @@ show_evo3d_defaults = function(module_name = NULL){
     cat("\n", paste(rep("-", nchar(header)), collapse = ""), "\n")
     cat(header, "\n")
     cat(paste(rep("-", nchar(header)), collapse = ""), "\n\n")
-    str(.evo3d_defaults[[paste0("default_", name, "_controls")]])
+    utils::str(.evo3d_defaults[[paste0("default_", name, "_controls")]])
   }
 
   if (!is.null(module_name)) {
@@ -146,7 +151,7 @@ show_evo3d_defaults = function(module_name = NULL){
 
 # .setup_chain_mapping ----
 
-#' setup chain mapping for pdb–msa alignment
+#' setup chain mapping for pdb-msa alignment
 #'
 #' standardizes chain input across pdbs and msas for main, interface,
 #' or occlusion chains. ensures every pdb has an explicit mapping even
@@ -328,7 +333,7 @@ show_evo3d_defaults = function(module_name = NULL){
 #'   interface_chain
 #'
 #' @return list with standardized msa, pdb, interface_chain, occlusion_chain,
-#'   and a run_grid data frame of msa–pdb–chain combinations
+#'   and a run_grid data frame of msa-db-chain combinations
 #' @keywords internal
 
 .setup_multi_run_info = function(msa, pdb, chain, interface_chain, occlusion_chain){
@@ -440,7 +445,7 @@ show_evo3d_defaults = function(module_name = NULL){
   list(path = tagged_path, tag = tag)
 }
 
-# new run_evo3d() fixed size patches----
+# new run_evo3d() fixed size patches ----
 
 #' run evo3D end-to-end
 #'
@@ -449,20 +454,20 @@ show_evo3d_defaults = function(module_name = NULL){
 #' Internally calls the MSA, PDB, alignment, codon-collapse, and stats modules.
 #'
 #' @param msa MSA input(s): a file path, matrix, or \code{bio3d::read.fasta()} object;
-#'   or a list of any mix of these (named automatically as \code{msa1}, \code{msa2}, …).
+#'   or a list of any mix of these (named automatically as \code{msa1}, \code{msa2}, ...).
 #' @param pdb PDB/mmCIF input(s): a \code{bio3d} PDB object or a file path; or a list of these
-#'   (named \code{pdb1}, \code{pdb2}, …). Files are read via \code{.standardize_pdb_input()}.
+#'   (named \code{pdb1}, \code{pdb2}, ...). Files are read via \code{.standardize_pdb_input()}.
 #' @param chain Main chain(s) to analyze. Accepts:
 #'   \itemize{
-#'     \item \code{"auto"} (default) – auto-detect per MSA–PDB via k-mer coverage.
-#'     \item single chain ID (\code{"A"}) or concatenated homomultimer string (\code{"AB"}) – expanded per PDB.
+#'     \item \code{"auto"} (default) - auto-detect per MSA-PDB via k-mer coverage.
+#'     \item single chain ID (\code{"A"}) or concatenated homomultimer string (\code{"AB"}) - expanded per PDB.
 #'     \item list form for per-PDB/per-MSA control (see \code{.setup_chain_mapping()}).
 #'   }
 #' @param interface_chain Chains used to define interface patches. Can be \code{NA},
 #'   \code{"all"}, a character vector, or list per PDB.
 #' @param occlusion_chain Chains used to occlude solvent accessibility (RSA/SASA). Same forms as \code{interface_chain}.
 #' @param analysis_mode One of \code{"codon"} (default). Controls downstream collapse mode.
-#' @param calculate_stats Logical. If \code{TRUE}, computes per-window stats (pi, Tajima’s D, haplotype div., etc.).
+#' @param calculate_stats Logical. If \code{TRUE}, computes per-window stats (pi, Tajima's D, haplotype div., etc.).
 #' @param detail_level Integer verbosity of returned intermediates:
 #'   \itemize{
 #'     \item \code{<0}: invisible, no return (write-to-disk only).
@@ -471,14 +476,14 @@ show_evo3d_defaults = function(module_name = NULL){
 #'     \item \code{2}: keep final MSA subsets.
 #'     \item \code{3}: keep most intermediates.
 #'   }
-#' @param verbose Integer console messaging level (0–2+).
-#' @param restart_run Reserved for future restart support (not implemented).
-#' @param user_aln Optional pre-aligned input placeholder (not implemented; alignment is performed internally).
+#' @param verbose Integer console messaging level (0-2+).
+#' @param restart_run A previous \code{evo3D_results} object with updated
+#'   \code{aln_info_sets}, used to resume or restart an analysis.
 #'
 #' @param msa_controls Named list of MSA-module controls. Typical fields:
 #'   \code{ref_method} (\code{"consensus"}|\code{"most_complete"}|row index),
 #'   \code{force_seq_type} (\code{"protein"}|\code{"nucleotide"}|NULL),
-#'   \code{detect_sequence_threshold} (0–1), \code{detect_sequence_len},
+#'   \code{detect_sequence_threshold} (0-1), \code{detect_sequence_len},
 #'   \code{reading_frame}, \code{reading_sens}, \code{genetic_code}.
 #' @param pdb_controls Named list of PDB-module controls. Typical fields:
 #'   \code{distance_method} (\code{"all"}|\code{"ca"}|\code{"backbone"}|\code{"sidechain"}),
@@ -486,14 +491,15 @@ show_evo3d_defaults = function(module_name = NULL){
 #'   \code{dist_cutoff} (Å) or \code{max_patch} (integers; at least one must be non-\code{NA}),
 #'   \code{rsa_cutoff}, \code{sasa_cutoff}, \code{only_exposed_in_patch}, \code{use_rsa_sasa} (\code{"and"}|\code{"or"}),
 #'   \code{interface_dist_cutoff}, \code{force_file_type} (\code{"pdb"}|\code{"cif"}|NULL), \code{patch_mode} (\code{"codon"}|\code{"residue"}).
-#' @param aln_controls Named list of alignment/merge controls. Typical fields:
-#'   \code{merge_type} (\code{"distance"}|\code{"exposure_distance"}),
-#'   \code{merge_exposure} (0–1 threshold for exposed consensus),
+#' @param aln_controls Named list of alignment controls. Typical fields:
 #'   \code{use_sample_names} (logical), \code{auto_chain_threshold} (k-mer coverage),
 #'   \code{kmer_size} (integer).
+#' @param collapse_controls Named list of codon collapse controls:
+#'   \code{merge_type} (\code{"distance"}|\code{"exposure_distance"} /\code{union}),
+#'   \code{merge_exposure} (0-1 threshold for exposed consensus),
 #' @param stat_controls Named list of statistics controls. Typical fields:
 #'   \code{calc_pi}, \code{calc_tajima}, \code{calc_hap}, \code{calc_patch_entropy},
-#'   \code{calc_polymorphic}, \code{valid_aa_only} (exclude X/* etc. when TRUE).
+#'   \code{calc_polymorphic}, \code{valid_aa_only} (exclude X/- when TRUE).
 #' @param output_controls Named list of output controls. Typical fields:
 #'   \code{output_dir} (path or \code{NULL}), \code{prefix} (string),
 #'   \code{write_msa_subsets}, \code{write_evo3d_df}, \code{write_call_info},
@@ -504,14 +510,14 @@ show_evo3d_defaults = function(module_name = NULL){
 #' \enumerate{
 #'   \item MSA -> reference peptide (\code{msa_to_ref()}).
 #'   \item PDB -> distances, accessibility, patches (\code{pdb_to_patch()}).
-#'   \item Align ref–PDB, map residues -> codons (\code{aln_msa_to_pdb()}).
+#'   \item Align ref-PDB, map residues -> codons (\code{aln_msa_to_pdb()}).
 #'   \item Merge multi-PDB/multimer contexts to codon windows (\code{collapse_to_codon()}).
 #'   \item Extract codon-aligned nucleotide windows (\code{.extract_msa_subsets()}).
 #'   \item (Optional) Compute stats (\code{run_pegas_three()}, \code{calculate_patch_entropy()},
 #'         \code{calculate_polymorphic_residue()}).
 #' }
 #'
-#' \strong{Auto chain detection:} \code{chain = "auto"} resolves per MSA–PDB using k-mer coverage
+#' \strong{Auto chain detection:} \code{chain = "auto"} resolves per MSA-PDB using k-mer coverage
 #' (see \code{aln_controls$kmer_size}, \code{aln_controls$auto_chain_threshold}). Passing chains are added per-PDB.
 #'
 #' \strong{3D windows:} Provide either \code{pdb_controls$dist_cutoff} (variable-size) or
@@ -540,15 +546,16 @@ show_evo3d_defaults = function(module_name = NULL){
 #'
 #' @export
 
-run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_chain = NA,    # how to handle pdb info #
+run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_chain = NA,    # how to handle pdb-msa mapping #
                      analysis_mode = 'residue', calculate_stats = TRUE, detail_level = 1, verbose = 1, # how to handle analysis
-                     restart_run = NULL, user_aln = NULL, # these need work -- how to restart a run?? # -- ... what does user need to give?
+                     restart_run = NULL,
                      msa_controls = list(), pdb_controls = list(), aln_controls = list(),
-                     stat_controls = list(), output_controls = list()){ # 5 control lists -- msa, pdb (patches), aln_controls -- how to merge, autochain thresh, stats, outputs
+                     collapse_controls = list(),
+                     stat_controls = list(), output_controls = list()){
 
 
-  # COULD ADD 1 more step -- validating input types (quick - is detail and verbose here ...) #
-  # 6/26/25 need to add #
+  # Check for restart run -- if empty run analysis #
+  if(is.null(restart_run)){
 
   #STEP 0 -- SETUP MODULE BEHAVIOR AND BUILD RUN INFO FROM USER INPUTS ----
   if(verbose > 0){
@@ -564,15 +571,18 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   aln_controls = .setup_controls(aln_controls, 'aln')
   stat_controls = .setup_controls(stat_controls, 'stat')
   output_controls = .setup_controls(output_controls, 'output')
+  collapse_controls = .setup_controls(collapse_controls, 'collapse')
 
   # logically these group with aln_controls but are not called in aln_msa_to_pdb() #
   use_sample_names = aln_controls$use_sample_names
   auto_chain_threshold = aln_controls$auto_chain_threshold
   kmer_size = aln_controls$kmer_size
+  #next_chain = aln_controls$next_chain_tolerance
 
   aln_controls$use_sample_names = NULL
   aln_controls$auto_chain_threshold = NULL
   aln_controls$kmer_size = NULL
+  #aln_controls$next_chain_tolerance = NULL
 
   # setup run info #
   if(verbose > 1){
@@ -698,9 +708,11 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   run_grid = run_grid[order(run_grid$msa, run_grid$pdb), , drop = FALSE]
   row.names(run_grid) = NULL
 
+  # ** insert chain tolerance here ** #
+
   if (verbose > 1) {
     cat("\tRun grid for rest of analysis:\n\n")
-    out = capture.output(print(run_grid))
+    out = utils::capture.output(print(run_grid))
     cat(paste0("\t", out), sep = "\n")
     cat('\n')
   }
@@ -719,9 +731,14 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
     aln_controls = c(aln_controls,
                      use_sample_names = use_sample_names,
                      auto_chain_threshold = auto_chain_threshold,
-                     kmer_size = kmer_size), # pack back in previously removed aln_controls #
+                     kmer_size = kmer_size
+                     #next_chain_tolerance = next_chain_tolerance
+                     ), # pack back in previously removed aln_controls #
     stat_controls = stat_controls,
-    output_controls = output_controls
+    output_controls = output_controls,
+    collapse_controls = collapse_controls,
+    verbose = verbose,
+    detail_level = detail_level
   )
 
   # stop if no mappings (nonsense data) #
@@ -821,10 +838,87 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
     aln_info_sets[[pdb_name]] = do.call(aln_msa_to_pdb, c(call_args, aln_controls))
   }
 
+  } else {
+
+    # check class - send back into aln_msa_to_pdb but with restart #
+    # need to check for all the elements too #
+    if(class(restart_run) != 'evo3D_results'){
+      stop('run_evo3d() can only restart with full results output assigned to restart_run')
+    }
+
+    # Printing restart
+    if (verbose > 0) {
+      cat('RESTARTING AT STEP 3: Aligning MSAs to PDBs with user updated pos_mats...\n')
+    }
+
+    # grab previous controls and info sets #
+    msa_info_sets = restart_run$msa_info_sets
+    pdb_info_sets = restart_run$pdb_info_sets
+    call_info = restart_run$call_info
+
+    run_grid = call_info$run_grid
+    pdb_controls = call_info$pdb_controls
+    aln_controls = call_info$aln_controls
+    stat_controls = call_info$stat_controls
+    msa_controls = call_info$msa_controls
+    output_controls = call_info$output_controls
+    collapse_controls = call_info$collapse_controls
+
+    # grab previous verbose and detail #
+    verbose = call_info$verbose
+    detail_level = call_info$detail
+
+    # store user_aln #
+    user_aln = restart_run$aln_info_sets
+
+    # unpack some extra params #
+    use_sample_names = aln_controls$use_sample_names
+    aln_controls$use_sample_names = NULL
+    aln_controls$auto_chain_threshold = NULL
+    aln_controls$kmer_size = NULL
+    #aln_controls$next_chain_tolerance = NULL
+
+    # now for each pdb -- resolve its residue windows into a codon window #
+    aln_info_sets = list()
+    pdb_names = unique(run_grid$pdb)
+    for(i in seq_len(length(pdb_names))) {
+
+      # gather all the msa's that this pdb touched
+      pdb_name = pdb_names[i]
+      sub_grid = run_grid[run_grid$pdb == pdb_name,]
+
+      msa_set = unique(sub_grid$msa)
+
+      call_args = list(
+        msa_info = msa_info_sets[msa_set],
+        pdb_info = pdb_info_sets[pdb_name][[1]],
+        chain = NA,
+        subset_msa = FALSE,
+        verbose = verbose - 1,
+        run_grid = sub_grid,
+        drop_gap_map = TRUE,
+        fix_gap_map_and_dedup_codons = TRUE,
+        patch_mode = pdb_controls$patch_mode,
+        max_patch = pdb_controls$max_patch,
+        dist_cutoff = pdb_controls$dist_cutoff,
+        only_exposed_in_patch = pdb_controls$only_exposed_in_patch,
+        user_aln = user_aln[[pdb_name]]
+      )
+
+      # aln_controls needs reworked - should have codon vs residue for patch mode
+      aln_info_sets[[pdb_name]] = do.call(aln_msa_to_pdb, c(call_args, aln_controls))
+    }
+
+
+
+
+  }
+
   # make residue df by rbinding all these aln_df's together #
   # thus every residue in analysis has a patch and codon window #
-
   residue_df = do.call(rbind, lapply(aln_info_sets, function(x) x$aln_df))
+  rownames(residue_df) = NULL
+
   # do i want to remove aln_df in aln_info_sets or leave for later inspection #
   # leave because individual aln_df maybe collapsed to codon level #
 
@@ -835,12 +929,17 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
 
   #STEP 6 MODULE 4 collapse_to_codon()  ----
   if(analysis_mode == 'codon'){
+
+      if (verbose >= 1) {
+        cat('STEP 4: Collapsing windows to codon level...\n')
+      }
+
     # collapse_to_codon()
     # merge on distance or distance+exposure #
     # can build variable or fixed-size patches #
     residue_df = collapse_to_codon(residue_df = residue_df,
-                                    merge_type = aln_controls$merge_type,
-                                    merge_exposure = aln_controls$merge_exposure,
+                                    merge_type = collapse_controls$merge_type,
+                                    merge_exposure = collapse_controls$merge_exposure,
                                     max_patch = pdb_controls$max_patch,
                                     only_exposed_in_patch = pdb_controls$only_exposed_in_patch,
                                     patch_mode = pdb_controls$patch_mode,
@@ -848,12 +947,18 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
                                     merge_interface_surface = TRUE, # need to place this
                                     pdb_info_sets = pdb_info_sets
                                     )
+  } else {
+    if (verbose >= 1){
+      cat('STEP 4: Skipping collapsing windows to codon level...\n')
+    }
   }
 
   #STEP 7 -- generate_msa_subsets (final_msa_subsets) # ----
 
   # generate set
-  final_msa_subsets = .extract_msa_subsets(msa_info_sets, residue_df)
+  final_msa_subsets = .extract_msa_subsets(msa_info_sets, residue_df,
+                                           use_sample_names = use_sample_names,
+                                           genetic_code = msa_controls$genetic_code)
 
 
   # CLEAN UP INTERMEDIATES TO DESIRED LEVEL ----
@@ -874,54 +979,30 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
 
   if (!calculate_stats){
     if (verbose >= 1) {
-      cat('STEP 4: Skipping stats calculation...\n')
+      cat('STEP 5: Skipping stats calculation...\n')
     }
   } else {
 
     if (verbose >= 1) {
-      cat('STEP 4: Calculating patch stats...\n')
+      cat('STEP 5: Calculating patch stats...\n')
     }
 
-    # add polymorphic sites -- needs wrapped across msa subsets #
-    # broken?
-    if(stat_controls$calc_polymorphic){
-      evo3d_df = calculate_polymorphic_residue(
-        msa_info_sets,
-        evo3d_df,
-        valid_aa_only = stat_controls$valid_aa_only
-      )
-    }
+    # what stats can we try? #
+    seqtypes = unlist(lapply(msa_info_sets, function(x){
+      x$seq_type
+    }))
 
-    # very slow
-    if(stat_controls$calc_patch_entropy){
-      evo3d_df = calculate_patch_entropy(
-        msa = final_msa_subsets,
-        residue_df = evo3d_df,
-        valid_aa_only = stat_controls$valid_aa_only
-      )
-    }
+    global_seqtype = ifelse('protein' %in% seqtypes, 'protein', 'nucleotide')
 
-    stat = c()
-    if (stat_controls$calc_pi) {
-      stat = c(stat, 'pi')
-    }
-
-    if (stat_controls$calc_tajima) {
-      stat = c(stat, 'tajima')
-    }
-
-    if (stat_controls$calc_hap) {
-      stat = c(stat, 'hap')
-    }
-
-    # also slow but works
-    if(length(stat) > 0){
-      evo3d_df = run_pegas_three(msa = final_msa_subsets,
-                                 residue_df = evo3d_df,
-                                 stat = stat)
-    }
+    evo3d_df = calculate_patch_stats(msa_info_sets = msa_info_sets,
+                                     final_msa_subsets = final_msa_subsets,
+                                     residue_df = evo3d_df,
+                                     stat_controls = stat_controls,
+                                     seqtype = global_seqtype,
+                                     gencode = msa_controls$genetic_code) # needs to be same seqtype across msa's (if one protein force global protein)
 
   }
+
 
   # CLEAN UP INTERMEDIATES TO DESIRED LEVEL ----
   if(detail_level < 1){
@@ -932,17 +1013,16 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
 
   #5 saving to disk (work on saving) ----
 
-  # reorder the columns of evo3d_df #
-  if(F){
-  # msa (if available), codon, msa_subset_id, ref_aa, pdbX_aa, pdbY_aa, ..., pdbX_residue_id, pdbY_residue_id, codon_patch, everything else #
-  codon_info =  intersect(c("msa","codon","msa_subset_id","ref_aa"), names(evo3d_df))
-  aa_cols = grep("^pdb.*_aa$", names(evo3d_df), value = TRUE)
-  id_cols = grep(".*residue_id$", names(evo3d_df), value = TRUE)
-  patch_col = "codon_patch"
-  other = setdiff(names(evo3d_df), c(codon_info, aa_cols, id_cols, patch_col))
-  col_order = c(codon_info, aa_cols, id_cols, patch_col, other)
-  #evo3d_df = evo3d_df[, col_order, drop = FALSE]  ** drop 8/25/25 **
-  }
+  results_list = list(
+    evo3d_df = evo3d_df,
+    final_msa_subsets = final_msa_subsets,
+    msa_info_sets = msa_info_sets,
+    pdb_info_sets = pdb_info_sets,
+    aln_info_sets = aln_info_sets,
+    call_info = call_info
+  )
+
+  class(results_list) = 'evo3D_results'
 
   # if output_dir is not null then write results to disk #
   if (!is.null(output_controls$output_dir)) {
@@ -962,17 +1042,17 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
     # check if any of the files i will write already exist #
     # if so i want to write all the following with the same tag #
     fasta_dir = file.path(output_dir, paste0(prefix, "msa_subsets"))
-    csv_path = file.path(output_dir, paste0(prefix, 'evo3d_df.csv'))
+    tsv_path = file.path(output_dir, paste0(prefix, 'evo3d_df.tsv'))
     call_path = file.path(output_dir, paste0(prefix, 'call_info.json'))
     intermediates_path = file.path(output_dir, paste0(prefix, "evo3d_intermediates.rds"))
 
     # check for safe save versions #
     fasta_dir_safe = .safe_save(fasta_dir, is_dir = TRUE)
-    csv_path_safe = .safe_save(csv_path, is_dir = FALSE)
+    tsv_path_safe = .safe_save(tsv_path, is_dir = FALSE)
     call_path_safe = .safe_save(call_path, is_dir = FALSE)
     intermediates_path_safe = .safe_save(intermediates_path, is_dir = FALSE)
 
-    tags = c(fasta_dir_safe$tag, csv_path_safe$tag, call_path_safe$tag, intermediates_path_safe$tag)
+    tags = c(fasta_dir_safe$tag, tsv_path_safe$tag, call_path_safe$tag, intermediates_path_safe$tag)
 
     if (!is.null(tags)) {
       # just take first tag #
@@ -996,10 +1076,10 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
 
       # fast writes with tar to temp_dir, but could possibly fail on HPC #
       tryCatch({
-        write_patch_fastas(final_result$msa_subsets, output_dir = fasta_dir)
+        write_patch_fastas(results_list$final_msa_subsets, output_dir = fasta_dir)
       }, error = function(e) {
-        warning("Fast write failed — falling back to slow file_writes mode.")
-        write_patch_fastas_slow(final_result$msa_subsets, output_dir = fasta_dir)
+        warning("Fast write failed - falling back to slow file_writes mode.")
+        write_patch_fastas_slow(results_list$final_msa_subsets, output_dir = fasta_dir)
       })
 
 
@@ -1007,10 +1087,10 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
 
     if (output_controls$write_evo3d_df) {
 
-      csv_path = file.path(paste0(tools::file_path_sans_ext(csv_path), tag, '.csv'))
+      csv_path = file.path(paste0(tools::file_path_sans_ext(tsv_path), tag, '.tsv'))
 
-      write.csv(evo3d_df,
-                file = csv_path,
+      utils::write.table(results_list$evo3d_df,
+                file = tsv_path,
                 row.names = FALSE,
                 quote = FALSE)
 
@@ -1021,7 +1101,7 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
       call_path = file.path(paste0(tools::file_path_sans_ext(call_path), tag, '.json'))
 
       jsonlite::write_json(
-        call_info,
+        results_list$call_info,
         path = call_path,
         auto_unbox = TRUE,
         pretty = TRUE
@@ -1033,12 +1113,14 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
 
       intermediates_path = file.path(paste0(tools::file_path_sans_ext(intermediates_path), tag, '.rds'))
 
-      saveRDS(list(msa_info_sets, pdb_info_sets, aln_info_sets))
+      saveRDS(list(msa_info_sets = results_list$msa_info_sets,
+                   pdb_info_sets = results_list$pdb_info_sets,
+                   aln_info_sets = results_list$aln_info_sets), intermediates_path)
     }
 
   } else {
     if (verbose >= 1) {
-      cat('STEP 5: No output directory specified in `output_controls$output_dir`, skipping writing results.\n')
+      cat('STEP 6: No output directory specified in `output_controls$output_dir`, skipping writing results.\n')
     }
   }
 
@@ -1050,15 +1132,12 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
   }
 
   if(detail_level < 0){
-    # no return at all assumes data of intereset is written to disk #
+    # no return at all assumes data of interest is written to disk #
     return(invisible())
   }
 
   #6 return results ----
-  if (verbose > 0) {
-    cat('---- RUN COMPLETE ----\n')
-  }
-  return(list(
+  results_list = list(
     evo3d_df = evo3d_df,
     final_msa_subsets = final_msa_subsets,
     msa_info_sets = msa_info_sets,
@@ -1066,8 +1145,17 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
     aln_info_sets = aln_info_sets,
     call_info = call_info
   )
-  )
+
+  class(results_list) = 'evo3D_results'
+
+  if (verbose > 0) {
+    cat('---- RUN COMPLETE ----\n')
+  }
+
+  return(results_list)
 
 }
+
+
 
 

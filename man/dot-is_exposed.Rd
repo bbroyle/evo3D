@@ -2,7 +2,7 @@
 % Please edit documentation in R/PDB_MODULE.R
 \name{.is_exposed}
 \alias{.is_exposed}
-\title{Classify Exposed Residues}
+\title{Classify exposed residues}
 \usage{
 .is_exposed(
   residue_df,
@@ -12,32 +12,38 @@
 )
 }
 \arguments{
-\item{residue_df}{Data frame of residues, typically output from
-\code{.calculate_accessibility()}, containing \code{rsa} and/or \code{sasa}.}
+\item{residue_df}{Data frame of residues, typically the output of
+\code{.calculate_accessibility()}, containing \code{rsa} and/or
+\code{sasa} columns.}
 
-\item{rsa_cutoff}{Numeric. RSA threshold for exposure classification
-(default \code{NA}, ignored).}
+\item{rsa_cutoff}{Numeric threshold for RSA-based exposure classification.
+May be a single value (interpreted as \code{>=}) or a length-2 numeric
+range. Default \code{NA} disables RSA filtering.}
 
-\item{sasa_cutoff}{Numeric. SASA threshold for exposure classification
-(default \code{NA}, ignored).}
+\item{sasa_cutoff}{Numeric threshold for SASA-based exposure classification.
+May be a single value (interpreted as \code{>=}) or a length-2 numeric
+range. Default \code{NA} disables SASA filtering.}
 
-\item{use_rsa_sasa}{Character, either \code{"and"} or \code{"or"}.
-Controls how RSA and SASA criteria are combined if both are provided.
-Default \code{"and"}; automatically reset to \code{"and"} if either
-cutoff is missing.}
+\item{use_rsa_sasa}{Character string, either \code{"and"} or \code{"or"},
+specifying how RSA and SASA criteria are combined when both are provided.
+Default \code{"and"}. If either cutoff is \code{NA}, this is
+automatically set to \code{"and"}.}
 }
 \value{
-The input \code{residue_df} with an added logical column
-  \code{exposed}, marking residues that meet the exposure criteria.
+The input \code{residue_df} with an additional logical column
+  \code{exposed}, indicating whether each residue meets the exposure
+  criteria.
 }
 \description{
 Marks residues as exposed based on solvent accessibility thresholds.
-Supports filtering by relative solvent accessibility (RSA), absolute
-solvent accessible surface area (SASA), or both. When both are provided,
-the combination can be controlled with \code{use_rsa_sasa}.
+Exposure can be defined using relative solvent accessibility (RSA),
+absolute solvent accessible surface area (SASA), or both. When both
+criteria are provided, their combination is controlled by
+\code{use_rsa_sasa}.
 }
 \details{
-Called internally after \code{.calculate_accessibility()} to add an
-\code{exposed} column to the residue data frame.
+This function is called internally after
+\code{.calculate_accessibility()} to append an \code{exposed} column
+to the residue-level data frame.
 }
 \keyword{internal}

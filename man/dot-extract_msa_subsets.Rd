@@ -4,7 +4,13 @@
 \alias{.extract_msa_subsets}
 \title{Extract Codon-Aligned Nucleotide Subsets Across Multiple MSAs}
 \usage{
-.extract_msa_subsets(msa_info, codon_patches, use_sample_names = TRUE)
+.extract_msa_subsets(
+  msa_info,
+  codon_patches,
+  use_sample_names = TRUE,
+  genetic_code = 1,
+  fill_char = "-"
+)
 }
 \arguments{
 \item{msa_info}{A named list of MSA entries. Each entry must contain

@@ -2,7 +2,7 @@
 % Please edit documentation in R/WRAPPER_MODULE.R
 \name{.setup_chain_mapping}
 \alias{.setup_chain_mapping}
-\title{setup chain mapping for pdb–msa alignment}
+\title{setup chain mapping for pdb-msa alignment}
 \usage{
 .setup_chain_mapping(chain, chain_type = "main", pdb_count = 1, msa_count = 1)
 }

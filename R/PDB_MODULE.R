@@ -1,271 +1,84 @@
 # --------------------------------------------------------------- #
 # PDB MODULE
+# Utilities for processing PDB and mmCIF structure data and returning
+# standardized pdb_info objects for downstream evo3D analysis.
 #
-# utilities for working with PDB and mmCIF data, returning standardized
-# pdb_info objects ready for downstream evo3D analysis
-#
-# main exported wrapper: pdb_to_patch()
-# internal .functions() handle standardization, sequence extraction,
-# residue distances, solvent accessibility, exposure, and interface contacts
-#
-# bonus utilities: download matching PDBs, visualize chain layouts
+# Internal helper functions (.functions) are wrapped by the
+# user-facing pdb_to_patch() interface.
 #
 # NOTES:
-# - internal helpers keep dot prefix, but some may be exported for modular use
-# - hydrogens and hetatoms are removed by default
-# - rsa and sasa both supported; sasa recommended where possible
+# 1. Hydrogens and HETATM records are removed by default.
+# 2. Both RSA and SASA are supported; SASA is recommended where available.
+# 3. Occlusion and interface chains are supported for accessibility and
+#    contact-based analyses.
 #
-# contact: bbroyle@purdue.edu
+# Contact: bbroyle@purdue.edu
 # --------------------------------------------------------------- #
 
-# helper functions ----
-# .find_matching_structures() * intended for an explore_evo3d() mode * ----
-
-#' find matching pdb structures
+# .split_chain() ----
+#' Split chain identifiers into single-character IDs
 #'
-#' blast a protein sequence against the rcsb pdb to find candidate structures.
-#' returns top hits filtered by sequence identity, with option to download pdbs
-#' and generate a hit summary plot.
-#' useful when no structure is supplied and you want evo3d to suggest starting models.
+#' Internal helper to normalize the \code{chain} argument. If \code{chain} is
+#' \code{NA}, it is returned unchanged. Otherwise, each element of \code{chain}
+#' is split into single-character chain identifiers and flattened into a
+#' character vector.
 #'
-#' @param pep protein sequence as a single character string
-#' @param identity_cutoff minimum sequence identity percentage (default 80)
-#' @param max_hits maximum number of structures to return (default 5)
-#' @param generate_plot logical, whether to return a ggplot summary (default TRUE)
-#' @param download_pdbs logical, whether to download matching pdbs (default TRUE)
-#' @param output_dir directory to save downloaded structures (default "retrieved_pdbs")
+#' @param chain Character vector of chain identifiers, or \code{NA}.
 #'
-#' @return a list with elements:
-#' \describe{
-#'   \item{top_hits}{data frame of top pdb hits passing filters}
-#'   \item{all_hits}{data frame of all blast hits with status annotations}
-#'   \item{hit_plot}{ggplot object if \code{generate_plot=TRUE}, else NULL}
-#'   \item{pdb_table}{table of downloaded pdb files if \code{download_pdbs=TRUE}, else NULL}
-#' }
+#' @return A character vector of single-character chain IDs, or \code{NA}.
 #'
-#' @details
-#' this is a wrapper for \code{bio3d::blast.pdb()} and \code{bio3d::get.pdb()}.
-#' results are filtered on sequence identity, then the top hits are kept.
-#' external database queries can be rate limited, so avoid running in tight parallel loops.
-#'
-#' @seealso \code{\link{download_structures}}, \code{bio3d::blast.pdb}, \code{bio3d::get.pdb}
-#'
-#' @keywords experimental
 #' @keywords internal
-
-.find_matching_structures = function(pep, identity_cutoff = 80, max_hits = 5, generate_plot = T,
-                                    download_pdbs = T, output_dir = 'retrieved_pdbs'){
-  # If no PDB is provided to program -- this function will blast RCSB pdb for matching structures #
-  # We want to return multiple structures for more robust window and solvent accessibility calculations #
-  # essentially a wrapper for bio3d::blast.pdb() & bio3d::get.pdb() with helpful plot and table output
-
-  stopifnot(is.character(pep), length(pep) == 1)
-  if (!is.numeric(identity_cutoff) || identity_cutoff < 0 || identity_cutoff > 100) {
-    stop('`identity_cutoff` must be numeric between 0 and 100')
+#' @noRd
+.split_chain = function(chain) {
+  if (length(chain) == 1L && is.na(chain)) {
+    return(chain)
   }
-  if (!is.numeric(max_hits) || max_hits < 1) {
-    stop('`max_hits` must be a positive integer')
-  }
-
-  message(
-    "\n⚠️ This function queries external databases; avoid rapid parallel calls to prevent rate-limiting.\n"
-  )
-
-  # blast pep (expecting single protein sequence) against PDB database
-  bl = bio3d::blast.pdb(pep)
-  hits = bl$hit.tbl
-  hits = hits[order(hits$mlog.evalue, decreasing = T),]
-
-  # filter on identity cutoff and then grab top hits #
-  filtered_hits = hits[hits$identity >= identity_cutoff,]
-  top_hits = filtered_hits[seq_len(min(max_hits, nrow(filtered_hits))),]
-
-  # add status to hits
-  hits$pdb_status = 'raw_hit'
-  hits$pdb_status[hits$subjectids %in% filtered_hits$subjectids] = 'filtered_hit'
-  hits$pdb_status[hits$subjectids %in% top_hits$subjectids] = 'top_hit'
-
-  # generate plot if desired
-  if(generate_plot){
-    hit_plot = ggplot2::ggplot(hits, ggplot2::aes(alignmentlength, identity, color = pdb_status))+
-      ggplot2::geom_jitter(height = 0.1, width = 0.5)+
-      ggrepel::geom_text_repel(ggplot2::aes(label = subjectids), show.legend = F)+
-      ggplot2::geom_hline(yintercept = identity_cutoff, linetype = 'dashed')+
-      ggplot2::theme_bw()+
-      ggplot2::scale_color_manual(values = c('raw_hit' = '#d95f02',
-                                             'filtered_hit' = '#7570b3',
-                                             'top_hit' = '#1b9e77'))+
-      ggplot2::labs(title = 'PDB Blast Results',
-                    subtitle = paste0('max_hits = ',
-                                      max_hits, ', identity_cutoff = ',
-                                      identity_cutoff, '%'),
-                    x = 'Reported Alignment Length',
-                    y = 'Identity (%)')
-  } else {
-    hit_plot = NULL
-  }
-
-  # ---------------------------------------------------------------------------- #
-  # check if any hits passed filters -- if not stop here and return data at hand #
-  if(nrow(top_hits) == 0){
-    message('\n🛑 No hits found >= identity cutoff: ', identity_cutoff, '% 🛑',
-            '\nInspect `$all_hits` and `$hit_plot` for more information\n',
-            'If you want to continue manually provide `all_hits` to:\n',
-            'download_structures(output$all_hits)\n')
-
-    return(list(
-      top_hits = top_hits,
-      all_hits = hits,
-      hit_plot = hit_plot,
-      pdb_table = NULL)
-    )
-  }
-
-  # ---------------------------------------------------------------------------- #
-  # if download is desired, call download_structures() #
-  # return hit_tables and hit_plot #
-  if(download_pdbs){
-    hit_table = suppressMessages(download_structures(top_hits, output_dir))
-
-    return(list(
-      top_hits = top_hits,
-      all_hits = hits,
-      hit_plot = hit_plot,
-      pdb_table = hit_table)
-    )
-  } else {
-    # return top_hits, all_hits, and hit_plot #
-    return(list(
-      top_hits = top_hits,
-      all_hits = hits,
-      hit_plot = hit_plot,
-      pdb_table = NULL)
-    )
-  }
-
+  unlist(strsplit(chain, "", fixed = TRUE), use.names = FALSE)
 }
-
-
-#' Download PDB Structures
-#'
-#' Downloads structures from a table of BLAST hits or PDB IDs.
-#'
-#' @param hit_table Data frame of BLAST hits or character vector of PDB IDs.
-#' @param output_dir Output directory to save downloaded PDB files.
-#'
-#' @return A data frame with PDB IDs, chain IDs, and local file paths.
-#' @export
-download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
-  # hit_table is one of the two table outputs of find_matching_structures() #
-  # hit_list$all_hits or hit_list$top_hits #
-  # or a user provided table with at least subjectids column #
-  # or can be a character vector of subjectids #
-
-  # subjectids are four letter pdb codes -- anything longer is trimmed in bio3d::get.pdb() #
-  # user may provide unique subjectids that are duplicated in the first 4 characters #
-  # thats fine I will add downloaded file path to both #
-
-  # !!! output_dir cannot be empty !!! # -- need to check #
-  if(output_dir == ''){
-    output_dir = '.'
-  } else if (grepl('/$', output_dir)){
-    output_dir = substr(output_dir, 1, nchar(output_dir)-1)
-  }
-
-  message("\n⚠️ This function makes live queries to external databases ⚠️\n",
-          "Please avoid running in parallel or sending requests too quickly\n",
-          "You may be rate-limited or blocked\n")
-
-  # check if hit_table is a character vector #
-  if(is.character(hit_table)){
-    hit_table = data.frame(subjectids = hit_table)
-  }
-
-  # check if subjectids column is available #
-  if(!'subjectids' %in% colnames(hit_table)){
-    message('\n🛑 hit_table must have a subjectids column or be a character vector 🛑\n')
-    return(NULL)
-  }
-
-  # make output directory (also handled by bio3d::get.pdb())
-  if(!dir.exists(output_dir)){
-    dir.create(output_dir, recursive = T)
-  }
-
-  # output is variable depending on content of output directory and success of download #
-  # if all successful (or previously downloaded) output is unnamed vector of file paths #
-  # if some failed "1" and newly download get "0", while previous download get path #
-  file_paths = suppressWarnings(bio3d::get.pdb(hit_table$subjectids, path = output_dir))
-
-  # if all download then unnamed vector -- if some missing then named vector output #
-  if(is.null(names(file_paths))){
-    names(file_paths) = file_paths
-  }
-
-  # use names as paths -- drop paths that failed
-  file_paths = file_paths[file_paths != '1']
-
-  # add file_paths to hit_table (force ordering)
-  ins = toupper(substr(hit_table$subjectids, 1, 4))
-  colord = paste0(output_dir, '/', ins, '.pdb')
-
-  hit_table$file_paths = names(file_paths[colord])
-
-  # return a table of subject ids and file paths
-  results = data.frame(
-    pdb_id = gsub('_.+', '', hit_table$subjectids),
-    chain_id = gsub('^[^_]+|_', '', hit_table$subjectids),
-    file_path = hit_table$file_paths,
-    stringsAsFactors = F
-  )
-
-  return(results)
-
-}
-
 
 # .plot_chain_map () ----
 
-#' plot mds map of pdb chains
+#' Plot PCA map of PDB chains (internal)
 #'
-#' computes a 2d mds projection of Cα coordinates from a pdb structure
-#' and plots chain positions using base R graphics.
-#' each chain is colored separately and labeled at its median coordinate.
+#' Internal utility to visualize the spatial layout of PDB chains using a
+#' 2D PCA projection of Cα coordinates.
 #'
-#' @param pdb pdb input: file path, bio3d pdb object, or standardized pdb from \code{.standardize_pdb_input()}
-#' @param chain optional chain identifier to subset (default NA = all chains)
-#' @param in_module logical, internal use flag to skip extra validation (default FALSE)
+#' @param pdb PDB input (file path or bio3d PDB object).
+#' @param chain Optional chain identifier(s); \code{NA} uses all chains.
 #'
-#' @return no return value. produces a base R plot
-#' @export
-
-.plot_chain_map = function(pdb, chain = NA, in_module = FALSE) {
+#' @keywords internal
+.plot_chain_map = function(pdb, chain = NA) {
 
   # local helper to compute coords
-  mds_pdb = function(pdb, chain, in_module) {
+  pca_pdb = function(pdb, chain) {
     pdb = .standardize_pdb_input(pdb)
     ca = pdb$atom[pdb$atom$elety == "CA", ]
 
-    if (!is.na(chain)) {
-      ca = ca[ca$chain == chain, ]
+    if (!(length(chain) == 1L && is.na(chain))) {
+      ca = ca[ca$chain %in% chain, ]
     }
-    ca$insert = ifelse(is.na(ca$insert), "", ca$insert)
 
-    mds_coords = cmdscale(dist(ca[, c("x", "y", "z")]), k = 2)
+    coords = ca[, c("x","y","z")]
+    pc = stats::prcomp(coords, center = TRUE, scale. = FALSE)
+    mds_coords = pc$x[, 1:2]
 
     data.frame(
-      residue_id = paste0(ca$resno, "_", ca$chain, "_", ca$insert),
+      residue_id = ca$residue_id,
       chain = as.character(ca$chain),
       x = mds_coords[, 1],
       y = mds_coords[, 2]
     )
+
   }
 
+  # if chain present split into mulit_chain #
+  chain = .split_chain(chain)
+
   # compute coords
-  plot_df = mds_pdb(pdb, chain, in_module = in_module)
+  plot_df = pca_pdb(pdb, chain)
 
   # median coords for labels
-  label_df = aggregate(cbind(x, y) ~ chain, data = plot_df, FUN = median)
+  label_df = stats::aggregate(cbind(x, y) ~ chain, data = plot_df, FUN = stats::median)
 
   # make sure chain is character
   chain_ids = unique(plot_df$chain)
@@ -275,8 +88,8 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
   }
 
   # if only one chain, still assign a color
-  cols = if (length(chain_ids) == 1) "black" else rainbow(length(chain_ids))
-  col_map = setNames(cols, chain_ids)
+  cols = if (length(chain_ids) == 1) "black" else grDevices::rainbow(length(chain_ids))
+  col_map = stats::setNames(cols, chain_ids)
 
   # plot points
   plot(
@@ -284,114 +97,115 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
     col = col_map[plot_df$chain],
     pch = 19, cex = 0.7,
     xlab = "", ylab = "",
-    axes = FALSE, main = "MDS projection of Cα coordinates by chain"
+    axes = FALSE
   )
 
   # add labels at medians
-  text(label_df$x, label_df$y, labels = label_df$chain, col = "black", font = 2, cex = 1)
+  graphics::text(label_df$x, label_df$y, labels = label_df$chain, col = "black", font = 2, cex = 1)
 
   # add legend if more than one chain
   if (length(chain_ids) > 1) {
-    legend("topright", legend = chain_ids, col = cols, pch = 19, bty = "n", cex = 1)
+    graphics::legend("bottomleft", legend = chain_ids, col = cols, pch = 19, bty = "n", cex = 1)
   }
+
+
+
 }
 
 
-
-
-
-# PDB UTILS ----
-
 # .standardize_pdb_input() ----
 
-#' standardize pdb input
+#' Standardize PDB/mmCIF input
 #'
-#' reads a pdb or cif file (or an existing bio3d object) and returns a cleaned pdb
-#' object for downstream evo3d analysis. fixes missing insert codes, replaces
-#' illegal '+' characters, and appends a unique residue identifier column.
+#' Reads a PDB or mmCIF file (or accepts an existing `bio3d` PDB object) and
+#' returns a cleaned PDB object ready for downstream evo3D analysis. This
+#' standardization step enforces evo3D assumptions about chain identifiers and
+#' internal delimiters, and appends a unique per-atom residue identifier.
 #'
-#' @param pdb pdb input: file path, or object from \code{bio3d::read.pdb()} or \code{bio3d::read.cif()}
-#' @param force_file_type optional character; override auto-detection.
-#'   one of \code{"cif"} or \code{"pdb"}. default NULL = auto-detect by file extension.
+#' @param pdb PDB input: a file path, or an object returned by
+#'   \code{bio3d::read.pdb()} or \code{bio3d::read.cif()}.
+#' @param force_file_type Optional character to override auto-detection; one of
+#'   \code{"cif"} or \code{"pdb"}. Default \code{NULL} uses the file extension.
 #'
 #' @details
-#' This function performs several preprocessing steps:
+#' The following preprocessing steps are applied:
+#' \itemize{
+#'   \item Insert codes with \code{NA} are replaced by \code{""} (empty string).
+#'   \item Chain identifiers must be single characters; multi-character chain IDs
+#'     result in an error (current evo3D limitation).
+#'   \item The characters \code{+}, \code{_}, \code{(}, and \code{)} are reserved
+#'     internally by evo3D. If present in \code{atom$resno}, \code{atom$chain},
+#'     or \code{atom$insert}, the function stops with an error.
+#'   \item A unique residue identifier is added as \code{atom$residue_id},
+#'     constructed as \code{"resno_chain_insert"}.
+#' }
 #'
-#' - If the PDB contains '+' in residue numbers, chain IDs, or insert codes,
-#'   these are replaced with a safe alternate character (one of \code{!,$,\%,\&,~,@}).
-#'   If no safe replacement is available, the function stops with an error.
-#' - Insert codes with NA are replaced by \code{""} (empty string).
-#' - Residue IDs are constructed as \code{"resno_chain_insert"}
-#'   and stored in \code{atom$residue_id}.
+#' @return A \code{"pdb"} object (from \pkg{bio3d}) with an additional
+#'   \code{atom$residue_id} column.
+#'
 #' @export
 
 .standardize_pdb_input = function(pdb, force_file_type = NULL){
 
-  # expects single entry #
-  input_class = class(pdb)[1]
+  # validate pdb (file or pdb object)
+  if (length(pdb) == 1L && is.character(pdb)) {
 
-  # At the end of if/else -- either pdb is read in or returns error #
-  if(input_class == 'character'){
-    if(!file.exists(pdb)){
-      stop('PDB file does not exist: ', pdb)
-    }
+    if (!file.exists(pdb)) stop("PDB file does not exist: ", pdb)
 
-    if(!is.null(force_file_type)){
-      if(force_file_type == 'cif'){
-        pdb = bio3d::read.cif(pdb)
-      } else if(force_file_type == 'pdb'){
-        pdb = bio3d::read.pdb(pdb)
-      } else {
-        stop('Invalid force_file_type. Use "cif" or "pdb".')
-      }
+    if (!is.null(force_file_type)) {
+      if (force_file_type == "cif") pdb = bio3d::read.cif(pdb, multi = FALSE, rm.insert = FALSE, rm.alt = TRUE)
+      else if (force_file_type == "pdb") pdb = bio3d::read.pdb(pdb, multi = FALSE, rm.insert = FALSE, rm.alt = TRUE)
+      else stop("Invalid force_file_type. Use 'cif' or 'pdb'.")
     } else {
-      if(grepl('cif$', pdb)){
-        pdb = bio3d::read.cif(pdb)
-      } else {
-        pdb = bio3d::read.pdb(pdb)
-      }
+      if (grepl("cif$", pdb, ignore.case = TRUE)) pdb = bio3d::read.cif(pdb, multi = FALSE, rm.insert = FALSE, rm.alt = TRUE)
+      else pdb = bio3d::read.pdb(pdb, multi = FALSE, rm.insert = FALSE, rm.alt = TRUE)
     }
-  } else if(!input_class == 'pdb'){
-    # print i dont know what you have #
-    stop('pdb provided is not a recognized format. Please provide a file path, an object from bio3d::read.pdb(), or an object from bio3d::read.cif().')
+
+  } else if (!inherits(pdb, "pdb")) {
+    stop("pdb provided is not a recognized format.\n Please provide a file path or an object from bio3d::read.pdb()/read.cif().")
   }
 
-  # fix insert NA to ''
-  pdb$atom$insert[is.na(pdb$atom$insert)] = ''
+  # check for required info #
+  if (is.null(pdb$atom) || !is.data.frame(pdb$atom)) {
+    stop("Input contains no atom table (pdb$atom).")
+  }
 
-  # "+" is used internally to combine residues into patches -- make sure "+" doesnt exist to start #
-  in_resno = any(grepl('\\+', pdb$atom$resno))
-  in_chain = any(grepl('\\+', pdb$atom$chain))
-  in_insert = any(grepl('\\+', pdb$atom$insert))
+  # fix insert NA to '' #
+  pdb$atom$insert = as.character(pdb$atom$insert)
+  pdb$atom$insert[is.na(pdb$atom$insert)] = ""
 
-  if(any(in_resno, in_chain, in_insert)){
-    # replacements for "+"
-    replacements = c("!","$","%","&","~")
+  # fix chain NA and check for multi char #
+  pdb$atom$chain = as.character(pdb$atom$chain)
+  pdb$atom$chain[is.na(pdb$atom$chain)] = ""
 
-    # used characters in set #
-    all_chars = paste(pdb$atom$resno, pdb$atom$chain, pdb$atom$insert, collapse = '')
+  # if multi char chains - stop #
+  # internally multi char are used chains signify multimer chains #
+  lens = nchar(pdb$atom$chain)
+  if (any(lens != 1L)) {
+    bad = unique(pdb$atom$chain[lens != 1L])
+    stop(
+      "Invalid chain IDs detected (must be single character):\n ",
+      paste(bad, collapse = ", "),
+      "\n evo3D currently supports only single-character chain identifiers."
+    )
+  }
 
-    # which replacement can we use
-    repl_char = NULL
-    for (cand in replacements) {
-      if (!grepl(cand, all_chars, fixed = TRUE)) {
-        repl_char = cand
-        break
-      }
+  # characters reserved internally
+  reserved_chars = c("\\+", "_", "\\(", "\\)")
+
+  for (pat in reserved_chars) {
+    in_resno = any(grepl(pat, pdb$atom$resno))
+    in_chain = any(grepl(pat, pdb$atom$chain))
+    in_insert = any(grepl(pat, pdb$atom$insert))
+
+    if (any(c(in_resno, in_chain, in_insert))) {
+      stop(
+        sprintf(
+          "Reserved character '%s' present in pdb info (resno, chain, insert). evo3D reserves this character internally.",
+          gsub("\\\\", "", pat)
+        )
+      )
     }
-
-    # need to stop here and tell user I couldnt process this PDB it has "+" and couldn't use
-    # any of the replacement characters (all in use)
-
-    if(is.null(repl_char)){
-      stop("PDB contains '+' but all replacement characters (!,$,%,& ,~, @) are already in use. Cannot sanitize input safely.")
-    }
-
-    # replace those "+"
-    pdb$atom$resno = gsub('+', repl_char, pdb$atom$resno, fixed = TRUE)
-    pdb$atom$chain = gsub('+', repl_char, pdb$atom$chain, fixed = TRUE)
-    pdb$atom$insert = gsub('+', repl_char, pdb$atom$insert, fixed = TRUE)
-
   }
 
   # add residue id information #
@@ -399,26 +213,25 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 
   # pass along pdb #
   return(pdb)
-
 }
-
 
 # .get_pdb_sequence() ----
 
-#' Extract PDB Sequences
+#' Extract PDB chain sequences
 #'
 #' Retrieves amino acid sequences for one or more chains from a PDB structure.
+#' This function is used internally by PDB alignment and chain-detection
+#' utilities.
 #'
-#' Called internally by PDB alignment and chain-detection functions.
-#'
-#' @param pdb A PDB object from \code{bio3d}, or file path passed to
+#' @param pdb A PDB object from \pkg{bio3d}, or a file path passed to
 #'   \code{.standardize_pdb_input()} if \code{in_module = FALSE}.
-#' @param chain Optional character vector of chain IDs. If \code{NA}, all
-#'   protein chains are extracted.
+#' @param chain Optional character vector of chain identifiers. If \code{NA},
+#'   sequences for all protein chains are extracted.
 #' @param in_module Logical. If \code{TRUE}, assumes \code{pdb} has already been
 #'   standardized (default \code{FALSE}).
 #'
 #' @return A named character vector of amino acid sequences, one per chain.
+#'
 #' @keywords internal
 
 .get_pdb_sequence = function(pdb, chain = NA, in_module = FALSE){
@@ -426,9 +239,10 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
   #if running in module (.standardize_pdb_input() is already run) #
   if(!in_module){
     pdb = .standardize_pdb_input(pdb)
+    chain = .split_chain(chain)
   }
 
-  if(length(chain) == 1 && is.na(chain)) {
+  if(length(chain) == 1L && is.na(chain)) {
     chain = unique(pdb$atom$chain)
   }
 
@@ -437,80 +251,110 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
     paste0(
       bio3d::pdbseq(bio3d::trim.pdb(pdb, chain = x, 'protein')),
       collapse = '')
-  }, USE.NAMES = T)
+  }, USE.NAMES = TRUE)
 
   return(aa_seq)
 }
 
-
 # .calculate_residue_distance() ----
 
-#' Residue-wise Distance Matrix
+#' Residue-wise distance matrix
 #'
-#' Computes a pairwise Euclidean distance matrix between residues of a PDB structure.
-#' Distances are based on atom coordinates, grouped by residue, with options to
-#' restrict to backbone, sidechain, or Cα atoms.
+#' Computes a pairwise Euclidean distance matrix between residues of a PDB
+#' structure. Distances are calculated from atomic coordinates and aggregated
+#' at the residue level using one of several supported methods.
 #'
-#' Called internally by patch-definition and exposure functions.
+#' This function is used internally by patch-definition, exposure, and
+#' structure-based analysis routines in evo3D.
 #'
-#' @param pdb A PDB object from \code{bio3d}, or file path passed to
+#' @param pdb A PDB object from \pkg{bio3d}, or a file path passed to
 #'   \code{.standardize_pdb_input()} if \code{in_module = FALSE}.
-#' @param chain Optional character vector of chain IDs to retain. Default NA
-#'   keeps all chains.
-#' @param distance_method Character string, one of \code{"all"}, \code{"ca"},
-#'   \code{"backbone"}, or \code{"sidechain"}. Controls which atoms are used for
-#'   distance calculation. Default \code{"all"}.
+#' @param chain Optional character vector of chain identifiers. If \code{NA},
+#'   all protein chains are retained.
+#' @param distance_method Character string specifying the residue distance
+#'   definition. One of:
+#'   \itemize{
+#'     \item \code{"ca"}: Cα–Cα distances.
+#'     \item \code{"all"}: minimum inter-atomic distance between residues.
+#'     \item \code{"centroid"}: Euclidean distance between residue centroids.
+#'   }
 #' @param in_module Logical. If \code{TRUE}, assumes \code{pdb} has already been
 #'   standardized (default \code{FALSE}).
 #'
-#' @return A symmetric square numeric matrix of residue–residue distances,
-#'   with residue IDs as row and column names.
+#' @return A symmetric numeric matrix of residue–residue distances, with
+#'   residue identifiers as row and column names.
+#'
 #' @keywords internal
 
-.calculate_residue_distance = function(pdb, chain = NA, distance_method = 'all', in_module = FALSE){
+.calculate_residue_distance = function(pdb, chain = NA, distance_method = 'ca',
+                                       in_module = FALSE){
 
-  # distance_method can be 'backbone', 'sidechain', 'ca', 'all'
-  # hydrogens always removed
+  # distance_method can be 'ca', 'all', 'centroid'
+  # hydrogens always removed from calculation #
+  if (!distance_method %in% c("ca","all","centroid")) {
+    stop("distance_method must be one of: 'ca', 'all', 'centroid'")
+  }
 
   #if running in module (.standardize_pdb_input() is already run) #
   if(!in_module){
     pdb = .standardize_pdb_input(pdb)
+    chain = .split_chain(chain)
   }
 
   # trim chains
-  if(!(length(chain) == 1 && is.na(chain))) {
+  if(!(length(chain) == 1L && is.na(chain))) {
     pdb = bio3d::trim.pdb(pdb, chain = chain)
   }
 
-  # pdb should be protein only and no H (what about glycan distance?)
+  # pdb should be protein only and no H (what about glycan distance?) #
+  # if chain was NA - compute distances between all protein chains #
   pdb = bio3d::trim.pdb(pdb, 'protein')
   pdb = bio3d::trim.pdb(pdb, 'noh')
 
-  # METHOD IS TOO MUCH #
-  # check method, maybe we are only doing backbone or sidechain
-  if(distance_method == 'backbone'){
-    pdb = bio3d::trim.pdb(pdb, 'backbone')
+  # set distance mat
+  if(distance_method == 'ca'){
 
-  } else if(distance_method == 'sidechain'){
-    pdb = bio3d::trim.pdb(pdb, 'sidechain')
-
-  } else if(distance_method == 'ca'){
     pdb = bio3d::trim.pdb(pdb, 'calpha')
+    # get atom distance matrix (could output symmetrical)
+    res_dist = bio3d::dm.xyz(pdb$xyz, grpby = pdb$atom$residue_id, mask.lower = FALSE)
+
+    # set row and column names
+    colnames(res_dist) = rownames(res_dist) = unique(pdb$atom$residue_id)
+
+    # set diag to 0
+    diag(res_dist) = 0
+
+  } else if (distance_method == 'centroid'){
+    uni_res = unique(pdb$atom$residue_id)
+    centroids = data.frame(residue_id = uni_res,
+                           x = NA_real_, y = NA_real_, z = NA_real_,
+                           stringsAsFactors = FALSE)
+
+    for(i in 1:nrow(centroids)){
+      ro = which(pdb$atom$residue_id == centroids$residue_id[i])
+      centroids$x[i] = mean(pdb$atom$x[ro], na.rm = TRUE)
+      centroids$y[i] = mean(pdb$atom$y[ro], na.rm = TRUE)
+      centroids$z[i] = mean(pdb$atom$z[ro], na.rm = TRUE)
+    }
+
+    # this one quick enough to supply to dist() - other methods go through bio3d::dm.xyz()
+    res_dist = stats::dist(matrix(as.numeric(unlist(centroids[,2:4])), nrow = nrow(centroids)))
+    res_dist = as.matrix(res_dist)
+
+    # set row and column names
+    colnames(res_dist) = rownames(res_dist) = centroids$residue_id
+
+  } else {
+    # all atom method
+    # get atom distance matrix (could output symmetrical)
+    res_dist = bio3d::dm.xyz(pdb$xyz, grpby = pdb$atom$residue_id, mask.lower = FALSE)
+
+    # set row and column names
+    colnames(res_dist) = rownames(res_dist) = unique(pdb$atom$residue_id)
+
+    # set diag to 0
+    diag(res_dist) = 0
   }
-
-  # create residue / atom identifiers
-  pdb$atom$insert[is.na(pdb$atom$insert)] = ''
-  pdb$atom$residue_id = paste0(pdb$atom$resno, '_', pdb$atom$chain, '_', pdb$atom$insert)
-
-  # get atom distance matrix
-  res_dist = bio3d::dm.xyz(pdb$xyz, grpby = pdb$atom$residue_id)
-
-  # set row and column names
-  colnames(res_dist) = rownames(res_dist) = unique(pdb$atom$residue_id)
-
-  # set diag to 0 and make symmetrical
-  res_dist = pmin(res_dist, t(res_dist), na.rm = TRUE)
-  diag(res_dist) = 0
 
   # return residue wise distance matrix
   return(res_dist)
@@ -519,39 +363,42 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 
 # .calculate_accessibility() ----
 
-#' Calculate Solvent Accessibility
+#' Calculate solvent accessibility
 #'
-#' calculates per-residue solvent accessible surface area (SASA) using
-#' a DSSP-style algorithm reimplemented in R and C++.
+#' Computes per-residue solvent accessible surface area (SASA) using a
+#' DSSP-style algorithm reimplemented in R and C++.
 #'
-#' Hydrogens are removed, residues are first renumbered sequentially to ensure
-#' contiguous indexing during calculation, then mapped back to their original
-#' PDB residue numbers, chain IDs, and insert codes. Accessibility is reported
-#' as both absolute SASA (Å²) and normalized relative solvent accessibility (RSA).
+#' Hydrogen atoms are removed prior to calculation. Residues are temporarily
+#' renumbered sequentially to ensure contiguous indexing during SASA
+#' computation, then mapped back to their original PDB residue numbers, chain
+#' identifiers, and insert codes. Accessibility is reported as both absolute
+#' SASA (Å²) and normalized relative solvent accessibility (RSA).
 #'
-#' Called internally by surface-exposure and patch-definition functions.
+#' This function is used internally by surface-exposure and patch-definition
+#' routines, but is also exposed for direct use.
 #'
-#' @param pdb A PDB object from \code{bio3d}, or file path passed to
+#' @param pdb A PDB object from \pkg{bio3d}, or a file path passed to
 #'   \code{.standardize_pdb_input()} if \code{in_module = FALSE}.
-#' @param chain Optional character vector of chain IDs to retain.
-#'   Default NA keeps all chains.
-#' @param method Character string specifying normalization scheme,
-#'   one of \code{"rose"}, \code{"miller"}, \code{"theoretical_tien"},
-#'   or \code{"empirical_tien"} (default \code{"rose"}).
-#' @param drop_incomplete Logical. If \code{TRUE} (default), drop residues
-#'   missing backbone atoms (N, CA, C, O), matching DSSP behavior.
+#' @param chain Optional character vector of chain identifiers to retain.
+#'   Default \code{NA} retains all protein chains.
+#' @param method Character string specifying the normalization scheme; one of
+#'   \code{"rose"}, \code{"miller"}, \code{"theoretical_tien"}, or
+#'   \code{"empirical_tien"} (default \code{"rose"}).
+#' @param drop_incomplete Logical. If \code{TRUE} (default), residues missing
+#'   backbone atoms (N, CA, C, O) are excluded, matching DSSP behavior.
 #' @param in_module Logical. If \code{TRUE}, assumes \code{pdb} has already been
 #'   standardized (default \code{FALSE}).
 #'
 #' @return A data frame with one row per residue, containing:
 #' \itemize{
-#'   \item \code{residue_index} – sequential index used internally
-#'   \item \code{aa} – one-letter amino acid code
-#'   \item \code{orig_resno}, \code{orig_chain}, \code{orig_insert} – original PDB identifiers
-#'   \item \code{sasa} – absolute solvent accessible surface area (Å²)
-#'   \item \code{rsa} – relative solvent accessibility (0–1, capped at 1)
-#'   \item \code{residue_id} – concatenated unique ID (\code{orig_resno_chain_insert})
+#'   \item \code{residue_index}: sequential residue index used internally
+#'   \item \code{aa}: one-letter amino acid code
+#'   \item \code{orig_resno}, \code{orig_chain}, \code{orig_insert}: original PDB identifiers
+#'   \item \code{sasa}: absolute solvent accessible surface area (Å²)
+#'   \item \code{rsa}: relative solvent accessibility (0–1, capped at 1)
+#'   \item \code{residue_id}: concatenated unique identifier
 #' }
+#'
 #' @export
 
 .calculate_accessibility = function(pdb, chain = NA, method = 'rose', drop_incomplete = TRUE, in_module = FALSE){
@@ -560,17 +407,20 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
   #if running in module (.standardize_pdb_input() is already run) #
   if(!in_module){
     pdb = .standardize_pdb_input(pdb)
+    chain = .split_chain(chain)
   }
 
   # check method is valid #
-  if(!method %in% c('rose', 'miller', 'theoretical_tien', 'empirical_tien')){
-    message('method not recognized - setting to default: rose')
+  if (!method %in% c("rose","miller","theoretical_tien","empirical_tien")) {
+    stop("method must be one of: rose, miller, theoretical_tien, empirical_tien")
   }
 
   # trim chains
-  if(!(length(chain) == 1 && is.na(chain))) {
+  if(!(length(chain) == 1L && is.na(chain))) {
     pdb = bio3d::trim.pdb(pdb, chain = chain)
   }
+
+  # otherwise using all protein chains #
 
   # MAX ACC VALUE TABLE ------------------------------------------- #
   max_acc = data.frame(
@@ -591,10 +441,14 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
   # Extract atom data
   atoms = pdb$atom
 
-  # Drop hydrogen atoms and non-ATOM records (sometimes data is but into b factor that is too large -- messing up elesy - can we use elety)
-  #atoms = atoms[atoms$elesy != 'H' & atoms$type == 'ATOM', ]
-  # dropping elety
-  atoms = atoms[atoms$elety != 'H' & atoms$type == 'ATOM', ]
+  # Drop hydrogen atoms and non-ATOM records.
+  # Filter using both element symbol (elesy) and atom name (elety),
+  # as element annotations can be unreliable in some PDB files.
+  atoms = atoms[
+    atoms$type == "ATOM" &
+      atoms$elesy != "H" &
+      !grepl("^H", atoms$elety),
+  ]
 
   # Handle residue numbering (each aa needs unique)
   atoms$orig_resno = atoms$resno
@@ -653,11 +507,8 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
   )
 
   # RUNNING DSSP REWRITE ------------------------------------------- #
-  #Rcpp::sourceCpp('src/dssp_sasa_rewrite.cpp')  # should move outside
   accessibility = calculateDSSPAccessibility(atom_df, residue_df)
-
-  # Add results to the residue dataframe (round to 2 decimals) ** doesnt save mem **
-  residue_df$sasa = round(accessibility, 2)
+  residue_df$sasa = round(accessibility, 3)
 
   # add rsa
   residue_df$max_acc = max_acc[match(residue_df$residue_name, max_acc$residue), method]
@@ -682,49 +533,78 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 
 # .is_exposed() ----
 
-#' Classify Exposed Residues
+#' Classify exposed residues
 #'
 #' Marks residues as exposed based on solvent accessibility thresholds.
-#' Supports filtering by relative solvent accessibility (RSA), absolute
-#' solvent accessible surface area (SASA), or both. When both are provided,
-#' the combination can be controlled with \code{use_rsa_sasa}.
+#' Exposure can be defined using relative solvent accessibility (RSA),
+#' absolute solvent accessible surface area (SASA), or both. When both
+#' criteria are provided, their combination is controlled by
+#' \code{use_rsa_sasa}.
 #'
-#' Called internally after \code{.calculate_accessibility()} to add an
-#' \code{exposed} column to the residue data frame.
+#' This function is called internally after
+#' \code{.calculate_accessibility()} to append an \code{exposed} column
+#' to the residue-level data frame.
 #'
-#' @param residue_df Data frame of residues, typically output from
-#'   \code{.calculate_accessibility()}, containing \code{rsa} and/or \code{sasa}.
-#' @param rsa_cutoff Numeric. RSA threshold for exposure classification
-#'   (default \code{NA}, ignored).
-#' @param sasa_cutoff Numeric. SASA threshold for exposure classification
-#'   (default \code{NA}, ignored).
-#' @param use_rsa_sasa Character, either \code{"and"} or \code{"or"}.
-#'   Controls how RSA and SASA criteria are combined if both are provided.
-#'   Default \code{"and"}; automatically reset to \code{"and"} if either
-#'   cutoff is missing.
+#' @param residue_df Data frame of residues, typically the output of
+#'   \code{.calculate_accessibility()}, containing \code{rsa} and/or
+#'   \code{sasa} columns.
+#' @param rsa_cutoff Numeric threshold for RSA-based exposure classification.
+#'   May be a single value (interpreted as \code{>=}) or a length-2 numeric
+#'   range. Default \code{NA} disables RSA filtering.
+#' @param sasa_cutoff Numeric threshold for SASA-based exposure classification.
+#'   May be a single value (interpreted as \code{>=}) or a length-2 numeric
+#'   range. Default \code{NA} disables SASA filtering.
+#' @param use_rsa_sasa Character string, either \code{"and"} or \code{"or"},
+#'   specifying how RSA and SASA criteria are combined when both are provided.
+#'   Default \code{"and"}. If either cutoff is \code{NA}, this is
+#'   automatically set to \code{"and"}.
 #'
-#' @return The input \code{residue_df} with an added logical column
-#'   \code{exposed}, marking residues that meet the exposure criteria.
+#' @return The input \code{residue_df} with an additional logical column
+#'   \code{exposed}, indicating whether each residue meets the exposure
+#'   criteria.
+#'
 #' @keywords internal
 
 .is_exposed = function(residue_df, rsa_cutoff = NA,
                        sasa_cutoff = NA, use_rsa_sasa = 'and') {
 
-  # how to combine (and or else)
-  if(any(is.na(c(rsa_cutoff, sasa_cutoff)))){
-    use_rsa_sasa = 'and'
+  # local helper to handle rsa and sasa ranges #
+  .in_range <- function(x, cutoff) {
+    if (length(cutoff) == 1L) {
+      x >= cutoff
+    } else {
+      x >= cutoff[1] & x <= cutoff[2]
+    }
+  }
+
+  # checking input types #
+  if (length(rsa_cutoff) > 2L || length(sasa_cutoff) > 2L) {
+    stop("rsa and sasa cutoffs must be length 1 or 2")
+  }
+
+  if (length(rsa_cutoff) == 2L && anyNA(rsa_cutoff)) {
+    stop("rsa_cutoff ranges cannot contain NA")
+  }
+
+  if (length(sasa_cutoff) == 2L && anyNA(sasa_cutoff)) {
+    stop("sasa_cutoff ranges cannot contain NA")
+  }
+
+  # if either or both are NA, set to AND #
+  if (anyNA(rsa_cutoff) || anyNA(sasa_cutoff)) {
+    use_rsa_sasa = "and"
   }
 
   # build exposure under rsa (if available)
-  if (!is.na(rsa_cutoff)) {
-    pass_rsa = residue_df$rsa >= rsa_cutoff
+  if (!is.na(rsa_cutoff[1])) {
+    pass_rsa = .in_range(residue_df$rsa, rsa_cutoff)
   } else {
     pass_rsa = TRUE
   }
 
   # build exposure under sasa (if available)
-  if (!is.na(sasa_cutoff)) {
-    pass_sasa = residue_df$sasa >= sasa_cutoff
+  if (!is.na(sasa_cutoff[1])) {
+    pass_sasa = .in_range(residue_df$sasa, sasa_cutoff)
   } else {
     pass_sasa = TRUE
   }
@@ -745,51 +625,62 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 
 # .identify_patches() ----
 
-#' identify surface patches
+#' Identify surface patches
 #'
-#' defines residue patches by growing neighborhoods around exposed seed residues
-#' using rsa, sasa, and spatial distance criteria. seeds are always taken from
-#' residues marked \code{exposed}; if cutoffs are set to 0, all residues qualify
-#' as seeds.
+#' Defines residue-level surface patches by growing spatial neighborhoods
+#' around exposed seed residues. Patches are constructed using residue–residue
+#' distances, with optional constraints on maximum distance and patch size.
 #'
-#' @param dist_mat residue–residue distance matrix
-#' @param residue_df data frame of residues with rsa, sasa, and exposure info
-#' @param dist_cutoff numeric. maximum distance in angstroms for neighbors (default 15)
-#' @param max_patch numeric. optional maximum number of neighbors per patch (default NA = unlimited)
-#' @param only_exposed_in_patch logical. if TRUE (default), restricts patch members to exposed residues only
+#' Seed residues are always those marked as \code{exposed} in
+#' \code{residue_df}. If exposure thresholds upstream are permissive (e.g.,
+#' cutoffs set to zero), all residues may qualify as seeds.
 #'
-#' @return input \code{residue_df} with new columns:
+#' @param dist_mat Numeric residue–residue distance matrix, with residue IDs
+#'   as row and column names.
+#' @param residue_df Data frame of residues containing exposure information
+#'   (including \code{exposed}, \code{rsa}, and/or \code{sasa}).
+#' @param dist_cutoff Numeric. Maximum distance (in Å) for including neighboring
+#'   residues in a patch (default \code{15}).
+#' @param max_patch Numeric. Optional maximum number of residues per patch
+#'   (default \code{NA}, unlimited).
+#' @param only_exposed_in_patch Logical. If \code{TRUE} (default), restricts
+#'   patch members to residues marked as exposed.
+#'
+#' @return The input \code{residue_df} with additional columns:
 #' \itemize{
-#'   \item \code{patch} – string of neighbor residue ids joined by '+'
-#'   \item \code{patch_len} – number of residues in patch
-#'   \item \code{max_dist} – maximum pairwise distance among patch members
+#'   \item \code{patch}: concatenated residue IDs for each patch, joined by \code{+}
+#'   \item \code{patch_len}: number of residues in the patch
+#'   \item \code{max_dist}: maximum distance (Å) from the seed residue to any
+#'     patch member
 #' }
+#'
 #' @keywords internal
 
 .identify_patches = function(dist_mat, residue_df,
                              dist_cutoff = 15, max_patch = NA,
                              only_exposed_in_patch = TRUE){
 
-  # in case dist mat is too large #
+  # grab dist mat subset #
   res_ids = intersect(rownames(dist_mat), residue_df$residue_id)
-  dist_mat = dist_mat[res_ids, res_ids]
+  if (!length(res_ids)) stop("No overlap between dist_mat rownames and residue_df$residue_id")
+  dist_mat = dist_mat[res_ids, res_ids, drop = FALSE]
 
   # first is to get seed residues #
   # only exposed residues are seeds #
-  seeds = residue_df[residue_df$exposed,]
+  seeds = residue_df[!is.na(residue_df$exposed) & residue_df$exposed,]
 
   # If only exposed can be in patch -- shrink to seeds #
   if(only_exposed_in_patch){
-    in_set = seeds$residue_id
-    dist_mat = dist_mat[in_set, in_set]
+    in_set = intersect(seeds$residue_id, rownames(dist_mat))
+    dist_mat = dist_mat[in_set, in_set, drop = FALSE]
   }
 
   # get neighbors (could be dist_cutoff, or could be max_patch, or both)
-  seeds$patch = NA
-  seeds$patch_len = NA
-  seeds$max_dist = NA
+  seeds$patch = NA_character_
+  seeds$patch_len = NA_integer_
+  seeds$max_dist = NA_real_
 
-  for(i in 1:nrow(seeds)){
+  for(i in seq_len(nrow(seeds))){
     center = seeds$residue_id[i]
 
     # get neighbors (sorted by distance) #
@@ -802,51 +693,73 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 
     # filtered by max_patch #
     if(!is.na(max_patch)){
-      neighbors = neighbors[1:min(c(length(neighbors), max_patch))]
+      neighbors = neighbors[seq_len(min(length(neighbors), max_patch))]
     }
 
     # add to seeds
-
-
-    if (length(neighbors) > 0) {
-      seeds$patch[i] = paste0(names(neighbors), collapse = '+')
+    if (length(neighbors)) {
+      seeds$patch[i] = paste0(names(neighbors), collapse = "+")
       seeds$patch_len[i] = length(neighbors)
-      seeds$max_dist[i] = round(max(neighbors),2)
-    } else {
-      patch_len = 0
+      seeds$max_dist[i] = round(max(neighbors), 2)
     }
+
   }
 
   # add back to residue_df
   idx = match(seeds$residue_id, residue_df$residue_id)
+  ok  = !is.na(idx)
+
   residue_df$patch[idx] = seeds$patch
   residue_df$patch_len[idx] = seeds$patch_len
   residue_df$max_dist[idx] = seeds$max_dist
-
-
 
   return(residue_df)
 }
 
 # .identify_interfaces() ----
 
-#' identify interface contacts
+#' Identify interface contacts
 #'
-#' finds residue contacts between two chain sets in a pdb structure using atom distances.
+#' Identifies residue contacts between two chain sets in a structure using
+#' atom–atom distance criteria (via \code{bio3d::binding.site()}).
 #'
-#' @param pdb bio3d pdb object
-#' @param chain chain id(s) of interest
-#' @param interface_chain chain id(s) to test for contacts with
-#' @param dist_cutoff maximum angstrom distance for contact (default 5)
+#' Chains are first trimmed to protein atoms and hydrogens are removed. Contacting
+#' residues from \code{chain} are returned as a \code{+}-concatenated string of
+#' residue identifiers.
 #'
-#' @return list with:
+#' @param pdb A \pkg{bio3d} \code{"pdb"} object, or a file path if
+#'   \code{in_module = FALSE} (standardized via \code{.standardize_pdb_input()}).
+#' @param chain Chain identifier(s) defining the primary set of residues.
+#'   May be a vector and/or a compact string (e.g. \code{"ABC"}).
+#' @param interface_chain Chain identifier(s) defining the interacting set.
+#'   May be a vector and/or a compact string. If \code{NA}, returns
+#'   \code{name = NA} and \code{interf = NA}.
+#' @param dist_cutoff Numeric. Maximum distance (Å) for a contact (default \code{5}).
+#' @param in_module Logical. If \code{TRUE}, assumes \code{pdb} and chain inputs
+#'   have already been standardized/split (default \code{FALSE}).
+#'
+#' @return A list with:
 #' \itemize{
-#'   \item \code{name} – interface name string of the form "interface_[chain]_[interface_chain(s)]"
-#'   \item \code{interf} – concatenated residue ids (e.g. "35_A_+42_A_") of contacting residues
+#'   \item \code{name}: interface label of the form
+#'     \code{"interface_[chain]_[interface_chain]"}
+#'   \item \code{interf}: \code{+}-concatenated residue identifiers for contacting residues
 #' }
+#'
 #' @keywords internal
 
-.identify_interface = function(pdb, chain = NULL, interface_chain = NULL, dist_cutoff = 5){
+.identify_interface = function(pdb, chain = NA, interface_chain = NA,
+                               dist_cutoff = 5, in_module = FALSE){
+
+  if (length(interface_chain) == 1L && is.na(interface_chain)){
+    message('No interface chain given')
+    return(list(name = NA_character_, interf = NA_character_))
+  }
+
+  if(!in_module){
+    pdb = .standardize_pdb_input(pdb)
+    chain = .split_chain(chain)
+    interface_chain = .split_chain(interface_chain)
+  }
 
   # remove H and HETATM
   pdb = bio3d::trim.pdb(pdb, 'protein')
@@ -879,75 +792,100 @@ download_structures = function(hit_table, output_dir = 'retrieved_pdbs'){
 
 # pdb_to_patch() ----
 
-#' extract surface patches from pdb
+#' Extract surface patches from a PDB structure
 #'
-#' high-level wrapper to compute sequences, residue distances,
-#' solvent accessibility, exposure, and surface patches from a pdb structure.
+#' High-level wrapper that computes chain sequences, residue–residue distances,
+#' solvent accessibility, exposure status, and surface patches from a protein
+#' structure.
 #'
-#' @param pdb pdb input: file path, bio3d object, or standardized pdb
-#' @param chain chain id(s) to analyze (default NA = all chains)
-#' @param interface_chain optional chain id(s) to define interface contacts
-#' @param occlusion_chain optional chain id(s) used to occlude surface during accessibility calculation
-#' @param distance_method residue distance metric: one of "all", "ca", "backbone", "sidechain" (default "all")
-#' @param drop_incomplete_residue logical. drop residues missing backbone atoms (default TRUE)
-#' @param rsa_method method for rsa normalization ("rose", "miller", "theoretical_tien", "empirical_tien")
-#' @param dist_cutoff numeric. maximum distance in angstroms for neighbors in patches (default 15)
-#' @param rsa_cutoff minimum rsa for defining seed residues (default 0.1)
-#' @param sasa_cutoff optional minimum sasa for seed residues
-#' @param only_exposed_in_patch logical. if TRUE, restricts patch members to exposed residues only (default TRUE)
-#' @param use_rsa_sasa logical operator for combining rsa and sasa cutoffs: "and" or "or" (default "and")
-#' @param max_patch optional maximum number of neighbors per patch
-#' @param interface_dist_cutoff maximum distance in angstroms for interface residue contacts (default 5)
-#' @param verbose integer. verbosity level (0 silent, >0 prints progress)
-#' @param detail_level controls return content: 0 = minimal, 1 = include chain, 2 = include distance matrix
-#' @param force_file_type optional. override auto-detection of pdb vs cif input
-#' @param patch_mode placeholder argument, not implemented
+#' @param pdb PDB input: file path, \code{bio3d} object, or standardized PDB.
+#' @param chain Chain identifier(s) to analyze; \code{NA} uses all chains.
+#' @param interface_chain Optional chain identifier(s) defining interface contacts.
+#' @param occlusion_chain Optional chain identifier(s) used to occlude the surface
+#'   during accessibility calculations.
+#' @param distance_method Residue distance metric; one of \code{"all"}, \code{"ca"},
+#'   \code{"backbone"}, or \code{"sidechain"} (default \code{"all"}).
+#' @param drop_incomplete_residue Logical; drop residues missing backbone atoms
+#'   (default \code{TRUE}).
+#' @param rsa_method Method for RSA normalization; one of \code{"rose"},
+#'   \code{"miller"}, \code{"theoretical_tien"}, or \code{"empirical_tien"}.
+#' @param dist_cutoff Numeric; maximum distance (Å) for defining patch neighbors
+#'   (default 15).
+#' @param rsa_cutoff Numeric; minimum RSA for defining seed residues (default 0.1).
+#' @param sasa_cutoff Optional numeric; minimum SASA for defining seed residues.
+#' @param only_exposed_in_patch Logical; if \code{TRUE}, restrict patch members to
+#'   exposed residues only (default \code{TRUE}).
+#' @param use_rsa_sasa Logical operator for combining RSA and SASA cutoffs; one of
+#'   \code{"and"} or \code{"or"} (default \code{"and"}).
+#' @param max_patch Optional integer; maximum number of neighbors per patch.
+#' @param interface_dist_cutoff Numeric; maximum distance (Å) for defining interface
+#'   residue contacts (default 5).
+#' @param verbose Integer; verbosity level (0 = silent, >0 prints progress).
+#' @param detail_level Integer controlling return content:
+#'   \itemize{
+#'     \item \code{0}: minimal output
+#'     \item \code{1}: include chain identifiers
+#'     \item \code{2}: include residue distance matrix
+#'   }
+#' @param force_file_type Optional; override automatic detection of PDB vs CIF input.
+#' @param in_wrapper Logical; internal flag indicating whether the function is
+#'   being called from a higher-level wrapper. When \code{TRUE}, certain input
+#'   checks or messages may be suppressed.
+#' @param patch_mode Placeholder argument; not implemented.
 #'
-#' @return list with:
+#' @return A list with class \code{"evo3D_pdb_info"} containing:
 #' \itemize{
-#'   \item \code{pdb} – NULL (object cached elsewhere)
-#'   \item \code{chain} – chain ids if \code{detail_level > 0}
-#'   \item \code{seq_set} – amino acid sequences per chain
-#'   \item \code{residue_dist} – residue–residue distance matrix if \code{detail_level > 1}
-#'   \item \code{residue_df} – data frame with residues, rsa/sasa values, exposure, and patch membership
+#'   \item \code{pdb}: PDB object (or \code{NULL} when cached externally).
+#'   \item \code{chain}: Chain identifiers if \code{detail_level > 0}.
+#'   \item \code{seq_set}: Amino acid sequences per chain.
+#'   \item \code{residue_dist}: Residue–residue distance matrix if
+#'     \code{detail_level > 1}.
+#'   \item \code{residue_df}: Data frame of residues with RSA/SASA values, exposure
+#'     status, and patch membership.
 #' }
+#'
 #' @export
 
 pdb_to_patch = function(pdb, chain = NA, interface_chain = NA, occlusion_chain = NA,
-                        distance_method = 'all',
+                        distance_method = 'centroid',
                         drop_incomplete_residue = TRUE, rsa_method = 'rose',
                         dist_cutoff = 15, rsa_cutoff = 0.1,
                         sasa_cutoff = NA, only_exposed_in_patch = TRUE,
                         use_rsa_sasa = 'and',
-                        max_patch = NA, interface_dist_cutoff = 5, verbose = 1, detail_level = 1,
-                        force_file_type = NULL, patch_mode = 'justaholder'){
+                        max_patch = NA, interface_dist_cutoff = 5,
+                        verbose = 1, detail_level = 1,
+                        force_file_type = NULL, in_wrapper = TRUE,
+                        patch_mode = 'placeholder'){
 
   # need to validate more inputs #
 
   # split chain and occlusion chain (they dont need grouped)
-  if(!(length(chain) == 1 && is.na(chain))) {
-    chain = unlist(strsplit(chain, split = ''))
-  }
+  chain = .split_chain(chain)
+  occlusion_chain = .split_chain(occlusion_chain)
 
-  if(!(length(occlusion_chain) == 1 && is.na(occlusion_chain))) {
-    occlusion_chain = unlist(strsplit(occlusion_chain, split = ''))
-  }
-
-  # step 0: validate pdb and return pdb object ----
+  # step 0: validate pdb and other arguments ----
   if(verbose > 0){
     cat('\tpdb_to_patch: Standardizing PDB input\n')
   }
 
-  pdb = .standardize_pdb_input(pdb, force_file_type)
-  # actually dont need because pdbs cached in wrapper #
-  # add in_wrapper flag #
+  if(!in_wrapper){
+    pdb = .standardize_pdb_input(pdb, force_file_type)
+    # check that max_patch or dist_cutoff is set #
+    if(is.na(max_patch) && is.na(dist_cutoff)){
+      stop('max_patch and dist_cutoff cannot both be NA')
+    }
+  }
+
+  distance_method = match.arg(distance_method, c('all', 'ca', 'centroid'))
+  rsa_method = match.arg(rsa_method, c('rose', 'miller', 'theoretical_tien', 'empirical_tien'))
+  use_rsa_sasa = match.arg(use_rsa_sasa, c('and', 'or'))
 
   # step 1: retrieve sequences for chains of interest ----
   if(verbose > 0){
     cat('\tpdb_to_patch: Extracting sequences for chains\n')
   }
 
-  seq_set = .get_pdb_sequence(pdb, chain = chain)
+  seq_set = .get_pdb_sequence(pdb, chain = chain, in_module = TRUE)
 
   # step 2: calculate residue-wise distance matrix ----
   if(verbose > 0){
@@ -956,7 +894,7 @@ pdb_to_patch = function(pdb, chain = NA, interface_chain = NA, occlusion_chain =
 
   residue_dist = .calculate_residue_distance(pdb, chain = chain,
                                             distance_method = distance_method,
-                                            in_module = T)
+                                            in_module = TRUE)
 
   # step 3: calculate residue-wsie accessibility ----
   if(verbose > 0){
@@ -972,8 +910,9 @@ pdb_to_patch = function(pdb, chain = NA, interface_chain = NA, occlusion_chain =
                                        method = rsa_method,
                                        in_module = T)
 
-  # residue_dist could have residues not present in residue_df ** if drop_incomplete_residue #
-  # just keep in mind #
+  # drop any occlusion set chains from residue_df #
+  occlusion_chain = occlusion_chain[!is.na(occlusion_chain)]
+  residue_df = residue_df[!residue_df$orig_chain %in% occlusion_chain,]
 
   # step 3.5: classifying exposure ----
   residue_df = .is_exposed(residue_df = residue_df,
@@ -988,12 +927,12 @@ pdb_to_patch = function(pdb, chain = NA, interface_chain = NA, occlusion_chain =
   }
 
   residue_df = .identify_patches(residue_dist,
-                                residue_df, only_exposed_in_patch = only_exposed_in_patch,
-                                dist_cutoff = dist_cutoff,
-                                max_patch = max_patch)
+                                 residue_df,
+                                 only_exposed_in_patch = only_exposed_in_patch,
+                                 dist_cutoff = dist_cutoff,
+                                 max_patch = max_patch)
 
   # step 5: capture interface patches #
-  # --- 9.30.25 -- may need debug dont know yet
   if(!(length(interface_chain) == 1 && is.na(interface_chain))){
 
     if(verbose > 0){
@@ -1019,13 +958,17 @@ pdb_to_patch = function(pdb, chain = NA, interface_chain = NA, occlusion_chain =
   # 2 - all
 
   # return list object
-  return(list(
-    pdb = NULL,  # 8/20/25 - turned null (already stored elsewhere)
+  results = list(
+    pdb = pdb,
     chain = if (detail_level > 0) chain else NULL,
     seq_set = seq_set,
     residue_dist = if (detail_level > 1) residue_dist else NULL,
     residue_df = residue_df
-  ))
+  )
+
+  class(results) = 'evo3D_pdb_info'
+
+  return(results)
 
 }
 

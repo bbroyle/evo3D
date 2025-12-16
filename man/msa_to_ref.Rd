@@ -2,58 +2,61 @@
 % Please edit documentation in R/MSA_MODULE.R
 \name{msa_to_ref}
 \alias{msa_to_ref}
-\title{extract reference and peptide sequence from msa}
+\title{Extract reference and peptide sequences from an MSA}
 \usage{
 msa_to_ref(
   msa,
   ref_method = "consensus",
   force_seq_type = NULL,
   verbose = 0,
+  genetic_code = 1,
   detect_sequence_threshold = 0.8,
   detect_sequence_len = 100,
   reading_frame = 0,
-  reading_sens = "F",
-  genetic_code = 1
+  reading_sens = "F"
 )
 }
 \arguments{
-\item{msa}{path to fasta file, a matrix, or an object returned by \code{bio3d::read.fasta()}}
+\item{msa}{MSA input: a FASTA file path, a character matrix, or an object returned
+by \code{bio3d::read.fasta()}.}
 
-\item{ref_method}{method to choose reference: one of \code{"most_complete"},
-\code{"consensus"}, or numeric row index (default "consensus")}
+\item{ref_method}{Reference selection method: \code{"most_complete"},
+\code{"consensus"}, or a numeric row index (default: \code{"consensus"}).}
 
-\item{force_seq_type}{optional sequence type: \code{"protein"}, \code{"nucleotide"},
-or \code{NULL} to auto-detect (default)}
+\item{force_seq_type}{Optional sequence type override: \code{"protein"},
+\code{"nucleotide"}, or \code{NULL} to auto-detect (default).}
 
-\item{verbose}{integer, print progress messages if > 0}
+\item{verbose}{Integer; print progress messages if > 0 (default: 0).}
 
-\item{detect_sequence_threshold}{proportion of atcg required to call nucleotide
-when auto-detecting (default 0.8)}
+\item{genetic_code}{NCBI genetic code number (default: 1, standard code).}
 
-\item{detect_sequence_len}{number of leading characters used for detection (default 100)}
+\item{detect_sequence_threshold}{Proportion of A/T/C/G required to classify as
+nucleotide during auto-detection (default: 0.8).}
 
-\item{reading_frame}{reading frame for translation (0,1,2). fixed to 0 in \code{run_evo3d}}
+\item{detect_sequence_len}{Number of leading characters used for auto-detection
+(default: 100).}
 
-\item{reading_sens}{translation sense ('F' forward, 'R' reverse). fixed to 'F' in \code{run_evo3d}}
+\item{reading_frame}{Reading frame for translation (0, 1, or 2). Fixed to 0 in
+\code{run_evo3d()}.}
 
-\item{genetic_code}{ncbi genetic code number (default 1, standard code)}
+\item{reading_sens}{Translation direction: \code{"F"} (forward) or \code{"R"}
+(reverse). Fixed to \code{"F"} in \code{run_evo3d()}.}
 }
 \value{
-a list with
+A list with class \code{"evo3D_msa_info"} containing:
 \itemize{
-  \item \code{msa_mat}: standardized alignment matrix
-  \item \code{ref}: reference sequence (dna or protein)
-  \item \code{pep}: peptide sequence (translated if nucleotide input,
-    or reference with '-' replaced by 'X' if protein)
-  \item \code{seq_type}: detected or forced sequence type
+  \item \code{msa_mat}: Standardized alignment matrix.
+  \item \code{ref}: Reference sequence (DNA or protein).
+  \item \code{pep}: Peptide sequence (translated if nucleotide input; otherwise
+    \code{ref} with \code{-} replaced by \code{X}).
+  \item \code{seq_type}: Detected or forced sequence type.
 }
 }
 \description{
-wrapper to standardize msa input, extract a reference sequence,
-detect or apply sequence type, and translate the reference to peptide if needed.
+Standardize MSA input, extract a reference sequence, detect or apply sequence
+type, and translate the reference to a peptide sequence if needed.
 }
 \details{
-can be called directly as part of a modular workflow, or internally by
-\code{run_evo3d()}, where frame and sens are fixed and only \code{genetic_code}
-may be user-specified.
+This can be called directly in modular workflows, or internally by
+\code{run_evo3d()}, where \code{reading_frame} and \code{reading_sens} are fixed.
 }

@@ -2,28 +2,37 @@
 % Please edit documentation in R/PDB_MODULE.R
 \name{.standardize_pdb_input}
 \alias{.standardize_pdb_input}
-\title{standardize pdb input}
+\title{Standardize PDB/mmCIF input}
 \usage{
 .standardize_pdb_input(pdb, force_file_type = NULL)
 }
 \arguments{
-\item{pdb}{pdb input: file path, or object from \code{bio3d::read.pdb()} or \code{bio3d::read.cif()}}
+\item{pdb}{PDB input: a file path, or an object returned by
+\code{bio3d::read.pdb()} or \code{bio3d::read.cif()}.}
 
-\item{force_file_type}{optional character; override auto-detection.
-one of \code{"cif"} or \code{"pdb"}. default NULL = auto-detect by file extension.}
+\item{force_file_type}{Optional character to override auto-detection; one of
+\code{"cif"} or \code{"pdb"}. Default \code{NULL} uses the file extension.}
+}
+\value{
+A \code{"pdb"} object (from \pkg{bio3d}) with an additional
+  \code{atom$residue_id} column.
 }
 \description{
-reads a pdb or cif file (or an existing bio3d object) and returns a cleaned pdb
-object for downstream evo3d analysis. fixes missing insert codes, replaces
-illegal '+' characters, and appends a unique residue identifier column.
+Reads a PDB or mmCIF file (or accepts an existing `bio3d` PDB object) and
+returns a cleaned PDB object ready for downstream evo3D analysis. This
+standardization step enforces evo3D assumptions about chain identifiers and
+internal delimiters, and appends a unique per-atom residue identifier.
 }
 \details{
-This function performs several preprocessing steps:
-
-- If the PDB contains '+' in residue numbers, chain IDs, or insert codes,
-  these are replaced with a safe alternate character (one of \code{!,$,\%,\&,~,@}).
-  If no safe replacement is available, the function stops with an error.
-- Insert codes with NA are replaced by \code{""} (empty string).
-- Residue IDs are constructed as \code{"resno_chain_insert"}
-  and stored in \code{atom$residue_id}.
+The following preprocessing steps are applied:
+\itemize{
+  \item Insert codes with \code{NA} are replaced by \code{""} (empty string).
+  \item Chain identifiers must be single characters; multi-character chain IDs
+    result in an error (current evo3D limitation).
+  \item The characters \code{+}, \code{_}, \code{(}, and \code{)} are reserved
+    internally by evo3D. If present in \code{atom$resno}, \code{atom$chain},
+    or \code{atom$insert}, the function stops with an error.
+  \item A unique residue identifier is added as \code{atom$residue_id},
+    constructed as \code{"resno_chain_insert"}.
+}
 }

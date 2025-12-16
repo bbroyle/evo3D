@@ -2,14 +2,14 @@
 % Please edit documentation in R/PDB_MODULE.R
 \name{pdb_to_patch}
 \alias{pdb_to_patch}
-\title{extract surface patches from pdb}
+\title{Extract surface patches from a PDB structure}
 \usage{
 pdb_to_patch(
   pdb,
   chain = NA,
   interface_chain = NA,
   occlusion_chain = NA,
-  distance_method = "all",
+  distance_method = "centroid",
   drop_incomplete_residue = TRUE,
   rsa_method = "rose",
   dist_cutoff = 15,
@@ -22,57 +22,78 @@ pdb_to_patch(
   verbose = 1,
   detail_level = 1,
   force_file_type = NULL,
-  patch_mode = "justaholder"
+  in_wrapper = TRUE,
+  patch_mode = "placeholder"
 )
 }
 \arguments{
-\item{pdb}{pdb input: file path, bio3d object, or standardized pdb}
+\item{pdb}{PDB input: file path, \code{bio3d} object, or standardized PDB.}
 
-\item{chain}{chain id(s) to analyze (default NA = all chains)}
+\item{chain}{Chain identifier(s) to analyze; \code{NA} uses all chains.}
 
-\item{interface_chain}{optional chain id(s) to define interface contacts}
+\item{interface_chain}{Optional chain identifier(s) defining interface contacts.}
 
-\item{occlusion_chain}{optional chain id(s) used to occlude surface during accessibility calculation}
+\item{occlusion_chain}{Optional chain identifier(s) used to occlude the surface
+during accessibility calculations.}
 
-\item{distance_method}{residue distance metric: one of "all", "ca", "backbone", "sidechain" (default "all")}
+\item{distance_method}{Residue distance metric; one of \code{"all"}, \code{"ca"},
+\code{"backbone"}, or \code{"sidechain"} (default \code{"all"}).}
 
-\item{drop_incomplete_residue}{logical. drop residues missing backbone atoms (default TRUE)}
+\item{drop_incomplete_residue}{Logical; drop residues missing backbone atoms
+(default \code{TRUE}).}
 
-\item{rsa_method}{method for rsa normalization ("rose", "miller", "theoretical_tien", "empirical_tien")}
+\item{rsa_method}{Method for RSA normalization; one of \code{"rose"},
+\code{"miller"}, \code{"theoretical_tien"}, or \code{"empirical_tien"}.}
 
-\item{dist_cutoff}{numeric. maximum distance in angstroms for neighbors in patches (default 15)}
+\item{dist_cutoff}{Numeric; maximum distance (Å) for defining patch neighbors
+(default 15).}
 
-\item{rsa_cutoff}{minimum rsa for defining seed residues (default 0.1)}
+\item{rsa_cutoff}{Numeric; minimum RSA for defining seed residues (default 0.1).}
 
-\item{sasa_cutoff}{optional minimum sasa for seed residues}
+\item{sasa_cutoff}{Optional numeric; minimum SASA for defining seed residues.}
 
-\item{only_exposed_in_patch}{logical. if TRUE, restricts patch members to exposed residues only (default TRUE)}
+\item{only_exposed_in_patch}{Logical; if \code{TRUE}, restrict patch members to
+exposed residues only (default \code{TRUE}).}
 
-\item{use_rsa_sasa}{logical operator for combining rsa and sasa cutoffs: "and" or "or" (default "and")}
+\item{use_rsa_sasa}{Logical operator for combining RSA and SASA cutoffs; one of
+\code{"and"} or \code{"or"} (default \code{"and"}).}
 
-\item{max_patch}{optional maximum number of neighbors per patch}
+\item{max_patch}{Optional integer; maximum number of neighbors per patch.}
 
-\item{interface_dist_cutoff}{maximum distance in angstroms for interface residue contacts (default 5)}
+\item{interface_dist_cutoff}{Numeric; maximum distance (Å) for defining interface
+residue contacts (default 5).}
 
-\item{verbose}{integer. verbosity level (0 silent, >0 prints progress)}
+\item{verbose}{Integer; verbosity level (0 = silent, >0 prints progress).}
 
-\item{detail_level}{controls return content: 0 = minimal, 1 = include chain, 2 = include distance matrix}
+\item{detail_level}{Integer controlling return content:
+\itemize{
+  \item \code{0}: minimal output
+  \item \code{1}: include chain identifiers
+  \item \code{2}: include residue distance matrix
+}}
 
-\item{force_file_type}{optional. override auto-detection of pdb vs cif input}
+\item{force_file_type}{Optional; override automatic detection of PDB vs CIF input.}
 
-\item{patch_mode}{placeholder argument, not implemented}
+\item{in_wrapper}{Logical; internal flag indicating whether the function is
+being called from a higher-level wrapper. When \code{TRUE}, certain input
+checks or messages may be suppressed.}
+
+\item{patch_mode}{Placeholder argument; not implemented.}
 }
 \value{
-list with:
+A list with class \code{"evo3D_pdb_info"} containing:
 \itemize{
-  \item \code{pdb} – NULL (object cached elsewhere)
-  \item \code{chain} – chain ids if \code{detail_level > 0}
-  \item \code{seq_set} – amino acid sequences per chain
-  \item \code{residue_dist} – residue–residue distance matrix if \code{detail_level > 1}
-  \item \code{residue_df} – data frame with residues, rsa/sasa values, exposure, and patch membership
+  \item \code{pdb}: PDB object (or \code{NULL} when cached externally).
+  \item \code{chain}: Chain identifiers if \code{detail_level > 0}.
+  \item \code{seq_set}: Amino acid sequences per chain.
+  \item \code{residue_dist}: Residue–residue distance matrix if
+    \code{detail_level > 1}.
+  \item \code{residue_df}: Data frame of residues with RSA/SASA values, exposure
+    status, and patch membership.
 }
 }
 \description{
-high-level wrapper to compute sequences, residue distances,
-solvent accessibility, exposure, and surface patches from a pdb structure.
+High-level wrapper that computes chain sequences, residue–residue distances,
+solvent accessibility, exposure status, and surface patches from a protein
+structure.
 }

@@ -4,7 +4,7 @@
 \alias{.extract_msa_subsets_single}
 \title{Extract a Codon-Aligned Subset from a single MSA}
 \usage{
-.extract_msa_subsets_single(msa, codon_patches)
+.extract_msa_subsets_single(msa, codon_patches, seq_type = "nucleotide")
 }
 \arguments{
 \item{msa}{A nucleotide alignment matrix (samples × sites).}

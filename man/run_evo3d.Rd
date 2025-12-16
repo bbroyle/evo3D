@@ -15,25 +15,25 @@ run_evo3d(
   detail_level = 1,
   verbose = 1,
   restart_run = NULL,
-  user_aln = NULL,
   msa_controls = list(),
   pdb_controls = list(),
   aln_controls = list(),
+  collapse_controls = list(),
   stat_controls = list(),
   output_controls = list()
 )
 }
 \arguments{
 \item{msa}{MSA input(s): a file path, matrix, or \code{bio3d::read.fasta()} object;
-or a list of any mix of these (named automatically as \code{msa1}, \code{msa2}, …).}
+or a list of any mix of these (named automatically as \code{msa1}, \code{msa2}, ...).}
 
 \item{pdb}{PDB/mmCIF input(s): a \code{bio3d} PDB object or a file path; or a list of these
-(named \code{pdb1}, \code{pdb2}, …). Files are read via \code{.standardize_pdb_input()}.}
+(named \code{pdb1}, \code{pdb2}, ...). Files are read via \code{.standardize_pdb_input()}.}
 
 \item{chain}{Main chain(s) to analyze. Accepts:
 \itemize{
-  \item \code{"auto"} (default) – auto-detect per MSA–PDB via k-mer coverage.
-  \item single chain ID (\code{"A"}) or concatenated homomultimer string (\code{"AB"}) – expanded per PDB.
+  \item \code{"auto"} (default) - auto-detect per MSA-PDB via k-mer coverage.
+  \item single chain ID (\code{"A"}) or concatenated homomultimer string (\code{"AB"}) - expanded per PDB.
   \item list form for per-PDB/per-MSA control (see \code{.setup_chain_mapping()}).
 }}
 
@@ -44,7 +44,7 @@ or a list of any mix of these (named automatically as \code{msa1}, \code{msa2}, 
 
 \item{analysis_mode}{One of \code{"codon"} (default). Controls downstream collapse mode.}
 
-\item{calculate_stats}{Logical. If \code{TRUE}, computes per-window stats (pi, Tajima’s D, haplotype div., etc.).}
+\item{calculate_stats}{Logical. If \code{TRUE}, computes per-window stats (pi, Tajima's D, haplotype div., etc.).}
 
 \item{detail_level}{Integer verbosity of returned intermediates:
 \itemize{
@@ -55,16 +55,15 @@ or a list of any mix of these (named automatically as \code{msa1}, \code{msa2}, 
   \item \code{3}: keep most intermediates.
 }}
 
-\item{verbose}{Integer console messaging level (0–2+).}
+\item{verbose}{Integer console messaging level (0-2+).}
 
-\item{restart_run}{Reserved for future restart support (not implemented).}
-
-\item{user_aln}{Optional pre-aligned input placeholder (not implemented; alignment is performed internally).}
+\item{restart_run}{A previous \code{evo3D_results} object with updated
+\code{aln_info_sets}, used to resume or restart an analysis.}
 
 \item{msa_controls}{Named list of MSA-module controls. Typical fields:
 \code{ref_method} (\code{"consensus"}|\code{"most_complete"}|row index),
 \code{force_seq_type} (\code{"protein"}|\code{"nucleotide"}|NULL),
-\code{detect_sequence_threshold} (0–1), \code{detect_sequence_len},
+\code{detect_sequence_threshold} (0-1), \code{detect_sequence_len},
 \code{reading_frame}, \code{reading_sens}, \code{genetic_code}.}
 
 \item{pdb_controls}{Named list of PDB-module controls. Typical fields:
@@ -74,15 +73,17 @@ or a list of any mix of these (named automatically as \code{msa1}, \code{msa2}, 
 \code{rsa_cutoff}, \code{sasa_cutoff}, \code{only_exposed_in_patch}, \code{use_rsa_sasa} (\code{"and"}|\code{"or"}),
 \code{interface_dist_cutoff}, \code{force_file_type} (\code{"pdb"}|\code{"cif"}|NULL), \code{patch_mode} (\code{"codon"}|\code{"residue"}).}
 
-\item{aln_controls}{Named list of alignment/merge controls. Typical fields:
-\code{merge_type} (\code{"distance"}|\code{"exposure_distance"}),
-\code{merge_exposure} (0–1 threshold for exposed consensus),
+\item{aln_controls}{Named list of alignment controls. Typical fields:
 \code{use_sample_names} (logical), \code{auto_chain_threshold} (k-mer coverage),
 \code{kmer_size} (integer).}
 
+\item{collapse_controls}{Named list of codon collapse controls:
+\code{merge_type} (\code{"distance"}|\code{"exposure_distance"} /\code{union}),
+\code{merge_exposure} (0-1 threshold for exposed consensus),}
+
 \item{stat_controls}{Named list of statistics controls. Typical fields:
 \code{calc_pi}, \code{calc_tajima}, \code{calc_hap}, \code{calc_patch_entropy},
-\code{calc_polymorphic}, \code{valid_aa_only} (exclude X/* etc. when TRUE).}
+\code{calc_polymorphic}, \code{valid_aa_only} (exclude X/- when TRUE).}
 
 \item{output_controls}{Named list of output controls. Typical fields:
 \code{output_dir} (path or \code{NULL}), \code{prefix} (string),
@@ -112,14 +113,14 @@ Internally calls the MSA, PDB, alignment, codon-collapse, and stats modules.
 \enumerate{
   \item MSA -> reference peptide (\code{msa_to_ref()}).
   \item PDB -> distances, accessibility, patches (\code{pdb_to_patch()}).
-  \item Align ref–PDB, map residues -> codons (\code{aln_msa_to_pdb()}).
+  \item Align ref-PDB, map residues -> codons (\code{aln_msa_to_pdb()}).
   \item Merge multi-PDB/multimer contexts to codon windows (\code{collapse_to_codon()}).
   \item Extract codon-aligned nucleotide windows (\code{.extract_msa_subsets()}).
   \item (Optional) Compute stats (\code{run_pegas_three()}, \code{calculate_patch_entropy()},
         \code{calculate_polymorphic_residue()}).
 }
 
-\strong{Auto chain detection:} \code{chain = "auto"} resolves per MSA–PDB using k-mer coverage
+\strong{Auto chain detection:} \code{chain = "auto"} resolves per MSA-PDB using k-mer coverage
 (see \code{aln_controls$kmer_size}, \code{aln_controls$auto_chain_threshold}). Passing chains are added per-PDB.
 
 \strong{3D windows:} Provide either \code{pdb_controls$dist_cutoff} (variable-size) or

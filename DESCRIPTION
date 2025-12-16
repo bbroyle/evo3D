@@ -15,8 +15,6 @@ Imports:
     Rcpp,
     bio3d,
     seqinr,
-    ggplot2,
-    ggrepel,
     ape, 
     pegas,
     jsonlite

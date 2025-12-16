@@ -2,22 +2,17 @@
 % Please edit documentation in R/PDB_MODULE.R
 \name{.plot_chain_map}
 \alias{.plot_chain_map}
-\title{plot mds map of pdb chains}
+\title{Plot PCA map of PDB chains (internal)}
 \usage{
-.plot_chain_map(pdb, chain = NA, in_module = FALSE)
+.plot_chain_map(pdb, chain = NA)
 }
 \arguments{
-\item{pdb}{pdb input: file path, bio3d pdb object, or standardized pdb from \code{.standardize_pdb_input()}}
+\item{pdb}{PDB input (file path or bio3d PDB object).}
 
-\item{chain}{optional chain identifier to subset (default NA = all chains)}
-
-\item{in_module}{logical, internal use flag to skip extra validation (default FALSE)}
-}
-\value{
-no return value. produces a base R plot
+\item{chain}{Optional chain identifier(s); \code{NA} uses all chains.}
 }
 \description{
-computes a 2d mds projection of Cα coordinates from a pdb structure
-and plots chain positions using base R graphics.
-each chain is colored separately and labeled at its median coordinate.
+Internal utility to visualize the spatial layout of PDB chains using a
+2D PCA projection of Cα coordinates.
 }
+\keyword{internal}

@@ -2,20 +2,26 @@
 % Please edit documentation in R/ANALYSIS_UTILS.R
 \name{block_entropy}
 \alias{block_entropy}
-\title{compute block entropy}
+\title{Compute block entropy}
 \usage{
-block_entropy(x, translate = TRUE)
+block_entropy(x, translate = TRUE, gencode = 1, valid_aa_only = TRUE)
 }
 \arguments{
-\item{x}{character matrix or vector of aligned sequences}
+\item{x}{Character matrix or vector of aligned sequences.}
 
-\item{translate}{logical. if TRUE (default), translate nucleotide codons
-to amino acids before computing entropy}
+\item{translate}{Logical; if \code{TRUE} (default), translate nucleotide codons
+to amino acids before computing entropy.}
+
+\item{gencode}{Integer genetic code for \code{seqinr::translate()} (default 1).}
+
+\item{valid_aa_only}{Logical; if \code{TRUE} (default), exclude haplotypes
+containing non-standard amino acid characters.}
 }
 \value{
-numeric shannon entropy value (bits, log base 2)
+Numeric Shannon entropy value (bits, log base 2).
 }
 \description{
-calculates shannon entropy across haplotypes in an msa subset.
-optionally translates nucleotide codons to amino acids first.
+Calculates Shannon entropy across haplotypes in an MSA subset. Optionally
+translates nucleotide codons to amino acids prior to entropy calculation.
 }
+\keyword{internal}

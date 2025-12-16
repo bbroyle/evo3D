@@ -2,7 +2,7 @@
 % Please edit documentation in R/PDB_MODULE.R
 \name{.calculate_accessibility}
 \alias{.calculate_accessibility}
-\title{Calculate Solvent Accessibility}
+\title{Calculate solvent accessibility}
 \usage{
 .calculate_accessibility(
   pdb,
@@ -13,18 +13,18 @@
 )
 }
 \arguments{
-\item{pdb}{A PDB object from \code{bio3d}, or file path passed to
+\item{pdb}{A PDB object from \pkg{bio3d}, or a file path passed to
 \code{.standardize_pdb_input()} if \code{in_module = FALSE}.}
 
-\item{chain}{Optional character vector of chain IDs to retain.
-Default NA keeps all chains.}
+\item{chain}{Optional character vector of chain identifiers to retain.
+Default \code{NA} retains all protein chains.}
 
-\item{method}{Character string specifying normalization scheme,
-one of \code{"rose"}, \code{"miller"}, \code{"theoretical_tien"},
-or \code{"empirical_tien"} (default \code{"rose"}).}
+\item{method}{Character string specifying the normalization scheme; one of
+\code{"rose"}, \code{"miller"}, \code{"theoretical_tien"}, or
+\code{"empirical_tien"} (default \code{"rose"}).}
 
-\item{drop_incomplete}{Logical. If \code{TRUE} (default), drop residues
-missing backbone atoms (N, CA, C, O), matching DSSP behavior.}
+\item{drop_incomplete}{Logical. If \code{TRUE} (default), residues missing
+backbone atoms (N, CA, C, O) are excluded, matching DSSP behavior.}
 
 \item{in_module}{Logical. If \code{TRUE}, assumes \code{pdb} has already been
 standardized (default \code{FALSE}).}
@@ -32,23 +32,25 @@ standardized (default \code{FALSE}).}
 \value{
 A data frame with one row per residue, containing:
 \itemize{
-  \item \code{residue_index} – sequential index used internally
-  \item \code{aa} – one-letter amino acid code
-  \item \code{orig_resno}, \code{orig_chain}, \code{orig_insert} – original PDB identifiers
-  \item \code{sasa} – absolute solvent accessible surface area (Å²)
-  \item \code{rsa} – relative solvent accessibility (0–1, capped at 1)
-  \item \code{residue_id} – concatenated unique ID (\code{orig_resno_chain_insert})
+  \item \code{residue_index}: sequential residue index used internally
+  \item \code{aa}: one-letter amino acid code
+  \item \code{orig_resno}, \code{orig_chain}, \code{orig_insert}: original PDB identifiers
+  \item \code{sasa}: absolute solvent accessible surface area (Å²)
+  \item \code{rsa}: relative solvent accessibility (0–1, capped at 1)
+  \item \code{residue_id}: concatenated unique identifier
 }
 }
 \description{
-calculates per-residue solvent accessible surface area (SASA) using
-a DSSP-style algorithm reimplemented in R and C++.
+Computes per-residue solvent accessible surface area (SASA) using a
+DSSP-style algorithm reimplemented in R and C++.
 }
 \details{
-Hydrogens are removed, residues are first renumbered sequentially to ensure
-contiguous indexing during calculation, then mapped back to their original
-PDB residue numbers, chain IDs, and insert codes. Accessibility is reported
-as both absolute SASA (Å²) and normalized relative solvent accessibility (RSA).
+Hydrogen atoms are removed prior to calculation. Residues are temporarily
+renumbered sequentially to ensure contiguous indexing during SASA
+computation, then mapped back to their original PDB residue numbers, chain
+identifiers, and insert codes. Accessibility is reported as both absolute
+SASA (Å²) and normalized relative solvent accessibility (RSA).
 
-Called internally by surface-exposure and patch-definition functions.
+This function is used internally by surface-exposure and patch-definition
+routines, but is also exposed for direct use.
 }

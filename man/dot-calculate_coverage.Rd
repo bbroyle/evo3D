@@ -2,28 +2,31 @@
 % Please edit documentation in R/ALN_MODULE.R
 \name{.calculate_coverage}
 \alias{.calculate_coverage}
-\title{Calculate Aligned Coverage Ranges}
+\title{Calculate aligned coverage ranges}
 \usage{
-.calculate_coverage(aln_mat, mismatch)
+.calculate_coverage(pos_sets)
 }
 \arguments{
-\item{aln_mat}{A character matrix representing a sequence alignment
-(rows = sequences, columns = positions).}
-
-\item{mismatch}{Optional numeric vector of mismatch positions to summarize.
-If not supplied or empty, the returned \code{mismatch} element is \code{NA}.}
+\item{pos_sets}{A single position-mapped alignment matrix or a named list of
+such matrices, as returned by \code{.map_aln_to_positions()}. Each matrix
+must contain columns \code{ref_aa} and \code{pdb_aa}.}
 }
 \value{
-A named list. Each element corresponds to one sequence, containing a
-  character vector of ranges (e.g., \code{"5:25"}). Includes an additional
-  element \code{mismatch} if mismatches were provided.
+A list (same length as \code{pos_sets}). Each element is a list with:
+\describe{
+  \item{ref_aa}{Character vector of non-gap ranges in the reference sequence
+    (e.g., \code{"5:25"}).}
+  \item{pdb_aa}{Character vector of non-gap ranges in the structure sequence.}
+  \item{mismatch}{Integer vector of alignment indices with mismatched residues.}
+}
 }
 \description{
-Identifies contiguous non-gap regions in each sequence of an alignment matrix
-and formats them as start:end ranges. Optionally summarizes contiguous runs
-of mismatch positions across the alignment.
+Identify contiguous non-gap regions in aligned reference and structure
+sequences and return them as start:end ranges. Also returns the alignment
+indices of mismatched positions (excluding gaps and 'X').
 }
 \details{
-Called internally by \code{.align_sequences()}.
+Typically used downstream of \code{.map_aln_to_positions()} to summarize
+aligned coverage and mismatch locations.
 }
 \keyword{internal}

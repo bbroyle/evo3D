@@ -36,39 +36,31 @@
 
 # .auto_detect_chain() ----
 
-#' auto detect matching pdb chain
+#' Automatically detect matching PDB chains by k-mer coverage
 #'
-#' compare a peptide sequence to each chain in a pdb structure
-#' and return similarity scores based on k-mer coverage.
-#' higher scores indicate closer matches between the query sequence and pdb chain.
+#' Compare a peptide sequence against each chain in a PDB structure and return
+#' similarity scores based on k-mer coverage. Higher scores indicate closer
+#' correspondence between the query peptide and a given PDB chain.
 #'
-#' @param pep amino acid sequence as a single character string
-#' @param pdb pdb structure input. can be a file path to a pdb, a pdb object
-#'   from \code{bio3d::read.pdb()}, or a standardized pdb from \code{standardize_pdb_input()}.
-#'   cannot be a pdb id alone.
-#' @param k integer k-mer size used for coverage calculation (default 4)
-#' @param in_module logical, for internal use. if TRUE, skips pdb validation
-#'   (default FALSE)
+#' This function is intended for internal use in automatic chain-mapping
+#' workflows.
 #'
-#' @return a named numeric vector of k-mer coverage values for each pdb chain,
-#' sorted in descending order. names correspond to pdb chain identifiers.
+#' @param pep Amino acid sequence as a single character string.
+#' @param pdb PDB structure input; may be a file path, a \code{bio3d} PDB object,
+#'   or a standardized PDB object. A PDB identifier alone is not supported.
+#' @param k Integer; k-mer size used for coverage calculation (default 4).
+#' @param in_module Logical; internal flag. If \code{TRUE}, skips PDB validation
+#'   steps handled upstream (default \code{FALSE}).
+#'
+#' @return Named numeric vector of k-mer coverage scores for each PDB chain,
+#'   sorted in descending order. Names correspond to chain identifiers.
 #'
 #' @details
-#' coverage is defined as the fraction of pdb k-mers also present in the peptide sequence.
+#' Coverage is defined as the fraction of k-mers in a PDB chain sequence that
+#' are also present in the query peptide sequence. This measure is asymmetric
+#' and reflects how well a PDB chain is represented within the query.
 #'
-#' @seealso \code{\link{find_matching_structures}}, \code{\link{standardize_pdb_input}},
-#'   \code{bio3d::read.pdb}
-#'
-#' @examples
-#' \dontrun{
-#' pep = "MKTFFVAGVILLLVATATGVHS"
-#' pdb = standardize_pdb_input("my_structure.pdb")
-#' auto_detect_chain(pep, pdb)
-#' }
-#'
-#' @export
-
-
+#' @keywords internal
 .auto_detect_chain = function(pep, pdb, k = 4, in_module = F){
 
   # Changed to coverage instead of jaccard
@@ -97,102 +89,99 @@
 
 # .calculate_coverage() ----
 
-#' Calculate Aligned Coverage Ranges
+#' Calculate aligned coverage ranges
 #'
-#' Identifies contiguous non-gap regions in each sequence of an alignment matrix
-#' and formats them as start:end ranges. Optionally summarizes contiguous runs
-#' of mismatch positions across the alignment.
+#' Identify contiguous non-gap regions in aligned reference and structure
+#' sequences and return them as start:end ranges. Also returns the alignment
+#' indices of mismatched positions (excluding gaps and 'X').
 #'
-#' Called internally by \code{.align_sequences()}.
+#' Typically used downstream of \code{.map_aln_to_positions()} to summarize
+#' aligned coverage and mismatch locations.
 #'
-#' @param aln_mat A character matrix representing a sequence alignment
-#'   (rows = sequences, columns = positions).
-#' @param mismatch Optional numeric vector of mismatch positions to summarize.
-#'   If not supplied or empty, the returned \code{mismatch} element is \code{NA}.
+#' @param pos_sets A single position-mapped alignment matrix or a named list of
+#'   such matrices, as returned by \code{.map_aln_to_positions()}. Each matrix
+#'   must contain columns \code{ref_aa} and \code{pdb_aa}.
 #'
-#' @return A named list. Each element corresponds to one sequence, containing a
-#'   character vector of ranges (e.g., \code{"5:25"}). Includes an additional
-#'   element \code{mismatch} if mismatches were provided.
+#' @return A list (same length as \code{pos_sets}). Each element is a list with:
+#' \describe{
+#'   \item{ref_aa}{Character vector of non-gap ranges in the reference sequence
+#'     (e.g., \code{"5:25"}).}
+#'   \item{pdb_aa}{Character vector of non-gap ranges in the structure sequence.}
+#'   \item{mismatch}{Integer vector of alignment indices with mismatched residues.}
+#' }
 #' @keywords internal
 
-.calculate_coverage = function(aln_mat, mismatch) {
-  covered_regions = list()
+.calculate_coverage = function(pos_sets) {
 
-  # convert alignments into ranges
-  for (i in 1:nrow(aln_mat)) {
-    seq_name = rownames(aln_mat)[i]
-    # ignore gap positions
-    positions = which(aln_mat[i, ] != "-")
-
-    if (length(positions) > 0) {
-      # find breaks in sequence
-      breaks = c(0, which(diff(positions) > 1), length(positions))
-      ranges = character()
-
-      for (j in 1:(length(breaks) - 1)) {
-        start_idx = breaks[j] + 1
-        end_idx = breaks[j + 1]
-        start_pos = positions[start_idx]
-        end_pos = positions[end_idx]
-        ranges = c(ranges, paste0(start_pos, ":", end_pos))
-      }
-
-      covered_regions[[seq_name]] = ranges
-    } else {
-      covered_regions[[seq_name]] = character(0)
-    }
+  # normalize input to list
+  if (is.matrix(pos_sets)) {
+    pos_sets = list(pos_sets)
   }
 
-  # convert mismatches into ranges
-  if (length(mismatch) > 0) {
-    # find breaks in sequence
-    breaks = c(0, which(diff(mismatch) > 1), length(mismatch))
-    ranges = character()
-
-    for (j in 1:(length(breaks) - 1)) {
-      start_idx = breaks[j] + 1
-      end_idx = breaks[j + 1]
-      start_pos = mismatch[start_idx]
-      end_pos = mismatch[end_idx]
-      ranges = c(ranges, paste0(start_pos, ":", end_pos))
-    }
-
-    covered_regions$mismatch = ranges
-  } else {
-    covered_regions$mismatch = NA
+  collapse_ranges = function(idx) {
+    if (length(idx) == 0L) return(character(0))
+    brks = c(0L, which(diff(idx) > 1L), length(idx))
+    sapply(seq_len(length(brks) - 1L), function(i) {
+      a = idx[brks[i] + 1L]
+      b = idx[brks[i + 1L]]
+      if (a == b) as.character(a) else paste0(a, ":", b)
+    })
   }
 
+  out = vector("list", length(pos_sets))
+  names(out) = names(pos_sets)
 
-  return(covered_regions)
+  for (k in seq_along(pos_sets)) {
+
+    pos_mat = pos_sets[[k]]
+
+    ref_idx = which(pos_mat[, "ref_aa"] != "-")
+    pdb_idx = which(pos_mat[, "pdb_aa"] != "-")
+
+    mismatch_idx = which(
+      pos_mat[, "ref_aa"] != "-" &
+        pos_mat[, "pdb_aa"] != "-" &
+        pos_mat[, "ref_aa"] != "X" &
+        pos_mat[, "pdb_aa"] != "X" &
+        pos_mat[, "ref_aa"] != pos_mat[, "pdb_aa"]
+    )
+
+    out[[k]] = list(
+      ref_aa   = collapse_ranges(ref_idx),
+      pdb_aa   = collapse_ranges(pdb_idx),
+      mismatch = mismatch_idx
+    )
+  }
+
+  out
 }
 
 # .align_sequences() ----
 
-#' Align Reference and Structure Sequences
+#' Align reference and structure sequences
 #'
-#' Aligns a reference amino acid sequence against a structure-derived sequence
-#' using ClustalOmega (via the \pkg{msa} package, default BLOSUM65). Computes
-#' positional mismatches and summarizes aligned coverage ranges.
+#' Align a reference amino acid sequence against a structure-derived sequence
+#' using Clustal Omega via the \pkg{msa} package.
 #'
-#' Intended for internal use in mapping reference sequences to PDB-derived
+#' Intended for internal use when mapping reference sequences to PDB-derived
 #' sequences prior to downstream patch analyses.
 #'
-#' @param sequences A named character vector of length two, containing the
-#'   reference sequence first and the structure-derived sequence second.
-#'   Example: \code{c(ref = "MKT...", pdb = "MK-...")}.
-#' @param user_supplied_alignment Reserved for future use. Currently ignored.
+#' @param sequences Named character vector of length two containing the reference
+#'   sequence and the structure-derived sequence. Names are used only to preserve
+#'   input order (e.g., \code{c(ref = "MKT...", pdb = "MK...")}).
+#' @param submat Character; substitution matrix used for alignment. One of
+#'   \code{"BLOSUM30"}, \code{"BLOSUM40"}, \code{"BLOSUM50"}, \code{"BLOSUM65"},
+#'   \code{"BLOSUM80"}, or \code{"Gonnet"} (default \code{"BLOSUM65"}).
 #'
-#' @return A list with components:
+#' @return List with:
 #' \describe{
-#'   \item{aln_mat}{A two-column character matrix with aligned reference and
-#'     structure sequences.}
-#'   \item{coverage}{Named list of coverage ranges (see
-#'     \code{.calculate_coverage}). Includes mismatch ranges if applicable.}
+#'   \item{aln_mat}{Two-column character matrix with aligned sequences. Columns are
+#'   \code{ref_aa} and \code{pdb_aa}.}
 #' }
-#' @seealso \code{.calculate_coverage}
+#'
 #' @keywords internal
 
-.align_sequences = function(sequences, user_supplied_alignment = NA){
+.align_sequences = function(sequences, submat = 'BLOSUM65'){
 
   # user_supplied_alignment not supported yet -- soon #
 
@@ -216,29 +205,20 @@
 
   # use msa::msa() ~ with baked in clustal omega (defualt to GONNET sub matrix)
   # could make invisible()
-  aln = suppressMessages(msa::msa(sequences, method = 'ClustalOmega', type = 'protein', order = 'input', substitutionMatrix = 'BLOSUM65'))
+  aln = suppressMessages(msa::msa(sequences, method = 'ClustalOmega', type = 'protein',
+                                  order = 'input', substitutionMatrix = submat,
+                                  verbose = FALSE))
 
   aln_set = as.character(aln@unmasked)
   aln_chars = strsplit(aln_set, '')
-
-  # which position are identical
-  mismatch = which(aln_chars[[1]] != aln_chars[[2]])
-
-  # only keep mismatch if they are aa to aa (not - or X)
-  mismatch = mismatch[!aln_chars[[1]][mismatch] %in% c('-', 'X')]
-  mismatch = mismatch[!aln_chars[[2]][mismatch] %in% c('-')]
 
   # unpack alignment into matrix
   aln_mat = do.call(cbind, aln_chars)
   colnames(aln_mat) = c('ref_aa', 'pdb_aa')
 
-  # calculate coverage and plot #
-  coverage = .calculate_coverage(t(aln_mat), mismatch)
-
   # return alignment matrix and coverage plot
   return(list(
-    aln_mat = aln_mat,
-    coverage = coverage
+    aln_mat = aln_mat
   ))
 }
 
@@ -269,9 +249,6 @@
 #' @keywords internal
 
 .map_aln_to_positions = function(aln_mat, residue_df, chain = NA){
-
-  # aln_mat is from .align_sequences() aln_mat$aln_mat
-  # residue_df is from pdb_to_patch()
 
   # filter for chain of interest #
   if(!any(is.na(chain))){
@@ -341,6 +318,7 @@
 #'     \item{exposed, max_dist}{Exposure and distance metadata (updated if applicable).}
 #'   }
 #' @keywords internal
+
 
 .map_patches_to_codons = function(aln_table, residue_df, drop_gap_map = TRUE, dist_mat = NA){
 
@@ -450,6 +428,7 @@
   return(aln_table)
 }
 
+
 # .extract_msa_subsets_single() ----
 
 #' Extract a Codon-Aligned Subset from a single MSA
@@ -466,9 +445,10 @@
 #'   \code{msa_subset_id}.
 #' @keywords internal
 
-.extract_msa_subsets_single = function(msa, codon_patches){
+.extract_msa_subsets_single = function(msa, codon_patches, seq_type = 'nucleotide'){
   # works across MSA's #
   # drop patches that dont have codon positions #
+  # now just works on one row at a time? #
   patches = codon_patches[!is.na(codon_patches$codon_patch),]
 
   msa_subset = list()
@@ -478,15 +458,20 @@
 
     # convert codon positions to nucleotide positions #
     nuc_pos = c()
-    for(codon in codon_pos){
-      codon_num = as.numeric(codon)
-      # each codon spans 3 nucleotides: codon 1 = nucs 1:3, codon 2 = nucs 4:6, etc.
-      nuc_range = ((codon_num - 1) * 3 + 1):(codon_num * 3)
-      nuc_pos = c(nuc_pos, nuc_range)
+    if(seq_type == 'protein'){
+      nuc_pos = as.numeric(codon_pos)
+    } else {
+      for(codon in codon_pos){
+        codon_num = as.numeric(codon)
+        # each codon spans 3 nucleotides: codon 1 = nucs 1:3, codon 2 = nucs 4:6, etc.
+        nuc_range = ((codon_num - 1) * 3 + 1):(codon_num * 3)
+        nuc_pos = c(nuc_pos, nuc_range)
+      }
+
     }
 
     # subset #
-    fasta = msa[, nuc_pos]
+    fasta = msa[, nuc_pos, drop = FALSE]
     msa_subset[[i]] = fasta
 
     # use the pre-computed msa_subset_id
@@ -526,7 +511,8 @@
 #'   drawn from one or more MSAs according to the patch definition.
 #' @keywords internal
 
-.extract_msa_subsets = function(msa_info, codon_patches, use_sample_names = TRUE){
+.extract_msa_subsets = function(msa_info, codon_patches, use_sample_names = TRUE,
+                                genetic_code = 1, fill_char = '-'){
   # works across MSA's #
   # schedules extract_msa_subsets_single #
 
@@ -536,6 +522,14 @@
   # 1. pull apart patches into msa1, msa2, msaX columns and schedule blocks to extract_msa_subsets #
   # 2. send row by row -- still pulling apart #
   # -- doing option 2
+
+  # add path for protein MSA #
+  msas = unique(codon_patches$msa)
+  seqtypes = unlist(lapply(msas, function(x){
+    msa_info[[x]]$seq_type
+  }))
+
+  global_seqtype = ifelse(any(seqtypes == 'protein'), 'protein', 'nucleotide')
 
   # add new column for each identifier #
   msa_subsets = list()
@@ -556,11 +550,54 @@
     for(j in seq_len(length(msa_set))){
       msa_name = msa_set[j]
       codons2 = codons[msas == msa_name]
-      msa_list[[j]] = .extract_msa_subsets_single(msa_info[[msa_name]]$msa_mat, data.frame(msa_subset_id = id, codon_patch = paste(codons2, collapse = '+')))[[1]]
+      seqtype = msa_info[[msa_name]]$seq_type
+      hold = .extract_msa_subsets_single(msa_info[[msa_name]]$msa_mat,
+                                                  data.frame(msa_subset_id = id, codon_patch = paste(codons2, collapse = '+')),
+                                                  seq_type = seqtype)[[1]]
+
+
+      # if seqtype nuc and global is protein - then translate these #
+      if(seqtype == 'nucleotide' && global_seqtype == 'protein'){
+        # should worry about '---' in frame being being '-' instead of 'X'
+        len = ncol(hold)
+        gap_grid = matrix(0, nrow = nrow(hold), ncol = len / 3)
+
+        for(ii in seq_len(ncol(gap_grid))){
+          st = ii * 3 - 2
+          en = ii * 3
+
+          ro = which(apply(hold[,st:en, drop = FALSE], 1, function(x){all(x == '-')}))
+          gap_grid[ro,ii] = 1
+
+        }
+
+        hold = t(apply(hold, 1, function(x){
+          y = seqinr::translate(x, numcode = genetic_code)
+        }))
+
+        # if ncol was 3 need to reformat #
+        if(len == 3){
+          hold = t(hold)
+        }
+
+        # 12.9 what was this fixing ? #
+        #if(length(hold) == 1){
+        #  rn = colnames(hold)
+        #  rownames(hold) = rn
+        #  colnames(hold) = NULL
+        #}
+
+        pos = which(gap_grid == 1)
+        hold[pos] = '-'
+
+      }
+
+      msa_list[[j]] = hold
+
     }
 
     # right here -- there needs to be a checking for sample_names
-    msa_subset = do.call(cbind, msa_list)
+    msa_subset = .join_msa_subsets(msa_list, fill_char = fill_char, use_sample_names = use_sample_names)
 
     msa_subsets[[i]] = msa_subset
     names(msa_subsets)[i] = id
@@ -573,6 +610,76 @@
 
   # just return
   return(msa_subsets)
+}
+
+# .join_msa_subsets() ----
+
+#' Join MSA subset matrices
+#'
+#' Combine a list of MSA subset matrices column-wise into a single matrix. When
+#' \code{use_sample_names = TRUE}, only samples present in all subsets (common
+#' rownames) are retained prior to joining. When \code{FALSE}, subsets are joined
+#' by row order and shorter matrices are padded with \code{fill_char}.
+#'
+#' @param msa_list List of MSA subset matrices to join.
+#' @param fill_char Character used to pad missing rows when
+#'   \code{use_sample_names = FALSE} (default \code{"-"}).
+#' @param use_sample_names Logical; if \code{TRUE} (default), join on common
+#'   rownames. If \code{FALSE}, join by row order with padding.
+#'
+#' @return A character matrix formed by column-binding the input subsets.
+#'
+#' @keywords internal
+
+.join_msa_subsets = function(msa_list, fill_char = '-', use_sample_names = TRUE){
+
+
+  # if joining on use_sample_names just take whats in common #
+  if(use_sample_names){
+    name_list = lapply(msa_list, rownames)
+    common_names = Reduce(intersect, name_list)
+
+    # ADD STOP MESSAGE IF no common_names #
+    if(!length(common_names)){
+      stop('NO COMMON NAMES - try turning off use_sample_names in aln_controls')
+    }
+
+    # cbind these common names #
+    len = length(msa_list)
+    sub_set = list()
+    for(i in seq_len(len)){
+      sub_set[[i]] = msa_list[[i]][match(common_names, rownames(msa_list[[i]])),,drop=FALSE]
+    }
+
+    msa_set = do.call(cbind, sub_set)
+  } else {
+    # so can join different lengths but need to fill shorter msas #
+    # replace with rowname combo? or generic row name #
+
+    # what is the row lengths of these sets
+    lens = unlist(lapply(msa_list, nrow))
+    mlen = max(lens)
+
+    for(i in seq_along(lens)){
+      if(nrow(msa_list[[i]]) == mlen) next
+
+      # fill in rows #
+      clen = nrow(msa_list[[i]])
+      flen = mlen - clen
+
+      nmat = matrix(fill_char, nrow = flen, ncol = ncol(msa_list[[i]]))
+      rownames(nmat) = paste0('artificial_fill', seq_len(flen))
+
+      msa_list[[i]] = rbind(msa_list[[i]], nmat)
+
+    }
+
+    # all equal rows #
+    msa_set = do.call(cbind, msa_list)
+
+  }
+
+  return(msa_set)
 }
 
 
@@ -670,7 +777,7 @@
         d = d[, valid$residue_id, drop = FALSE]
 
         # make mapping
-        res2cod = setNames(valid$codon_id, valid$residue_id)
+        res2cod = stats::setNames(valid$codon_id, valid$residue_id)
 
         # loop through ro #
         for (i in ro) {
@@ -713,7 +820,7 @@
           d = d[, valid$residue_id, drop = FALSE]
 
           # make mapping
-          res2cod = setNames(valid$codon_id, valid$residue_id)
+          res2cod = stats::setNames(valid$codon_id, valid$residue_id)
 
           # loop through ro #
           for (i in ro) {
@@ -741,6 +848,11 @@
   if (!is.null(interface_df)) {
     residue_df = rbind(residue_df, interface_df)
   }
+
+  # last step set exposed and max_dist to NA for gap mapped positions #
+  ro = grepl('-', residue_df$codon)
+  residue_df$exposed[ro] = NA
+  residue_df$max_dist[ro] = NA
 
   return(residue_df)
 }
@@ -794,10 +906,10 @@
 #'   patches. Default \code{NULL} (no cutoff).
 #' @param only_exposed_in_patch Logical; if \code{TRUE}, restricts patch
 #'   rebuilding to exposed residues only.
-#' @param merge_type Character; strategy for merging overlapping patches.
-#'   Typically \code{"hold"}. Reserved for internal use.
-#' @param merge_exposure Character; strategy for merging exposure information.
-#'   Typically \code{"hold"}. Reserved for internal use.
+#' @param user_aln Optional alignment object previously returned by
+#'   \code{aln_msa_to_pdb()} that has been manually modified (e.g., via
+#'   \code{adjust_aln()}). If provided, this alignment is reused instead of
+#'   recomputing a new alignment.
 #'
 #' @return A list with three components:
 #' \describe{
@@ -810,17 +922,18 @@
 #' @export
 
 aln_msa_to_pdb = function(msa_info, pdb_info, chain = 'auto',
-                           subset_msa = TRUE,
-                           verbose = 1,
-                           run_grid = NULL,
-                           drop_gap_map = TRUE, # aln will drop patches centered on gap map residues
-                           fix_gap_map_and_dedup_codons = TRUE, # aln will drop gap map residues from patch membership
-                           patch_mode, max_patch, dist_cutoff, only_exposed_in_patch,
-                           merge_type = 'hold', merge_exposure = 'hold'){
+                          subset_msa = TRUE,
+                          verbose = 1,
+                          run_grid = NULL,
+                          drop_gap_map = TRUE, # aln will drop patches centered on gap map residues
+                          fix_gap_map_and_dedup_codons = TRUE, # aln will drop gap map residues from patch membership
+                          patch_mode, max_patch, dist_cutoff, only_exposed_in_patch,
+                          user_aln = NULL){
 
   # msa_info ~ must be list object from msa_to_ref() # ~ can be list of msa_infos
   # pdb_info ~ must be list object from ONE pdb_to_patch() #
 
+  if(is.null(user_aln)){
   # step 0: prep data ----
   # in module always a run grid -- outside module can be chain specified #
 
@@ -879,6 +992,15 @@ aln_msa_to_pdb = function(msa_info, pdb_info, chain = 'auto',
     names(pos_sets)[i] = paste0(run_grid$msa[i], '_', run_grid$pdb[i], '_', run_grid$chain[i])
   }
 
+  } else {
+    # use user adjusted pos_mat #
+    residue_df = pdb_info$residue_df
+    pos_sets = user_aln$pos_mat
+  }
+
+  # calculate coverage on pos_mat #
+  coverage = .calculate_coverage(pos_sets)
+
   # step 2.5: create large rbind() list -- every residue_id has row ----
   aln_table = do.call(rbind, pos_sets)
   aln_table = as.data.frame(aln_table, stringsAsFactors = FALSE)
@@ -906,7 +1028,7 @@ aln_msa_to_pdb = function(msa_info, pdb_info, chain = 'auto',
   }
 
   codon_patches = .map_patches_to_codons(aln_table, residue_df,
-                                          drop_gap_map = TRUE)
+                                         drop_gap_map = TRUE)
 
   # STEP 4: add MSA subset ids ----
   # here tied to residue_id #
@@ -916,15 +1038,15 @@ aln_msa_to_pdb = function(msa_info, pdb_info, chain = 'auto',
   # STEP 5: fix gap map and dedup codons ----
   if(fix_gap_map_and_dedup_codons){
     codon_patches = .fix_gap_map_and_dedup_codons(residue_df = codon_patches,
-                                             patch_mode = patch_mode,
-                                             max_patch = max_patch,
-                                             dist_cutoff = dist_cutoff,
-                                             only_exposed_in_patch = only_exposed_in_patch,
-                                             pdb_info = pdb_info)
+                                                  patch_mode = patch_mode,
+                                                  max_patch = max_patch,
+                                                  dist_cutoff = dist_cutoff,
+                                                  only_exposed_in_patch = only_exposed_in_patch,
+                                                  pdb_info = pdb_info)
   }
 
-  table(codon_patches$codon_len)
-  table(codon_patches$unique_codon)
+  #table(codon_patches$codon_len)
+  #table(codon_patches$unique_codon)
 
   # step 4: grab subsets of MSA ----
   msa_subsets = NULL
@@ -933,21 +1055,85 @@ aln_msa_to_pdb = function(msa_info, pdb_info, chain = 'auto',
   }
 
   # step 5: gather coverage data for individual aliments and return ----
-  aln_sets = lapply(aln_sets, function(x) {
-    x$aln_mat = NULL
-    x
-  })
 
   # also fixed exposure to FALSE if NA
   #codon_patches$exposed[is.na(codon_patches$exposed)] = FALSE
 
   # return data #
-  return(list(
-    coverage = aln_sets,
+  results = list(
+    coverage = coverage,
     aln_df = codon_patches,
+    pos_mat = pos_sets,
     msa_subsets = msa_subsets)
-  )
+
+  class(results) = 'evo3D_aln_info'
+
+  return(results)
 
 }
 
 
+
+# adjust_aln() ----
+
+#' Adjust alignment rows by shifting residue assignments
+#'
+#' Utility to manually correct alignment mappings by moving residue identifiers
+#' and aligned structure characters from one row to another. This is primarily
+#' used to fix small alignment offsets introduced during automated alignment or
+#' post-processing.
+#'
+#' If \code{pos_mat} is a list of matrices (e.g., for multimers), the adjustment
+#' is applied independently to each element.
+#'
+#' @param pos_mat A character matrix containing at least columns
+#'   \code{"residue_id"} and \code{"pdb_aa"}, or a list of such matrices.
+#' @param from Integer vector of source row indices.
+#' @param to Integer vector of destination row indices. Each destination row
+#'   must contain a gap (\code{fill_char}) in \code{residue_id}.
+#' @param fill_char Character used to represent gaps (default \code{"-"}).
+#'
+#' @return A modified alignment matrix (or list of matrices) with rows adjusted.
+#'
+#' @export
+
+adjust_aln = function(pos_mat, from = NULL, to = NULL, fill_char = "-") {
+
+  # if multimers
+  if (is.list(pos_mat)) {
+    return(lapply(
+      pos_mat,
+      adjust_aln,
+      from = from,
+      to   = to,
+      fill_char = fill_char
+    ))
+  }
+
+  # --- single-matrix case below ---
+
+  if (length(from) != length(to)) {
+    stop("arguments from and to need the same length")
+  }
+
+  for (i in seq_along(from)) {
+    if (pos_mat[to[i], "residue_id"] != "-") {
+      msg = paste0(
+        "Cannot replace row ", to[i],
+        " because it is not a gap: ",
+        pos_mat[to[i], "residue_id"]
+      )
+      stop(msg)
+    }
+
+    # copy
+    pos_mat[to[i], "residue_id"] = pos_mat[from[i], "residue_id"]
+    pos_mat[to[i], "pdb_aa"]     = pos_mat[from[i], "pdb_aa"]
+
+    # blank old
+    pos_mat[from[i], "residue_id"] = fill_char
+    pos_mat[from[i], "pdb_aa"]     = fill_char
+  }
+
+  pos_mat
+}

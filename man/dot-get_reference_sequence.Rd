@@ -13,17 +13,21 @@
 )
 }
 \arguments{
-\item{msa}{a character matrix of sequences (rows) by alignment positions (columns).
-should be standardized using \code{.standardize_msa_input()}}
+\item{msa}{A character matrix of sequences (rows) by alignment positions (columns).
+Should be standardized using \code{.standardize_msa_input()}.}
 
-\item{ref_method}{either \code{"most_complete"}, \code{"consensus"}, or a numeric row index}
+\item{ref_method}{Reference selection method: \code{"most_complete"},
+\code{"consensus"}, or a numeric row index.}
 
-\item{force_seq_type}{optional. force sequence type to \code{"nucleotide"} or \code{"protein"}.
-if \code{NULL}, type is auto-detected}
+\item{force_seq_type}{Optional sequence type override: \code{"nucleotide"} or
+\code{"protein"}. If \code{NULL}, the type is auto-detected.}
 
-\item{detect_sequence_threshold}{proportion of ATCG characters required to classify as nucleotide when auto-detecting. default is 0.8}
+\item{detect_sequence_threshold}{Proportion of A/T/C/G characters required to
+classify a sequence as nucleotide during auto-detection (default: 0.8).}
 
-\item{detect_sequence_len}{maximum number of non-gap '-' or 'X' positions (from the start of the sequence) to consider for auto-detection. default is 100}
+\item{detect_sequence_len}{Maximum number of non-gap (\code{-}) or \code{X}
+positions (from the start of the sequence) considered during auto-detection
+(default: 100).}
 }
 \value{
 a list with two elements:
@@ -31,9 +35,13 @@ a list with two elements:
   \item{seq_type}{sequence type, either \code{"nucleotide"} or \code{"protein"}}
 }
 \description{
-extracts a reference sequence from a multiple sequence alignment (MSA) using one of three strategies:
-a specified row index, the most complete sequence, or the consensus across all sequences.
-consensus is built from the most frequent valid characters (ATCG for nucleotide; 20 standard amino acids for protein).
-if no valid character is found in a column, the position becomes 'X'.
+Extract a reference sequence from a multiple sequence alignment (MSA) using
+one of three strategies: a specified row index, the most complete sequence,
+or a consensus across all sequences.
+}
+\details{
+Consensus is built from the most frequent valid characters
+(A/T/C/G for nucleotide; 20 standard amino acids for protein).
+If no valid character is found in a column, the position becomes 'X'.
 }
 \keyword{internal}

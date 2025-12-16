@@ -2,7 +2,7 @@
 % Please edit documentation in R/ANALYSIS_UTILS.R
 \name{run_pegas_three}
 \alias{run_pegas_three}
-\title{calculate diversity and neutrality stats for msa subsets}
+\title{Calculate diversity and neutrality statistics for MSA subsets}
 \usage{
 run_pegas_three(msa, residue_df = NULL, stat = c("pi", "tajima", "hap"))
 }
@@ -28,11 +28,12 @@ data frame with one row per alignment window (\code{msa_subset_id}),
   }
 }
 \description{
-computes nucleotide diversity (pi), tajima's d, and haplotype diversity
-on nucleotide alignments. accepts a single alignment or a list of
-patch-level alignments.
+Compute selection statistics—including nucleotide diversity (pi), Tajima's D,
+and haplotype diversity—on nucleotide multiple sequence alignments. Accepts a
+single alignment or a named list of patch-level alignments.
 }
 \details{
-typically used downstream of \code{aln_msa_to_pdb()} to quantify
-variation within structure-informed windows.
+Typically used downstream of \code{aln_msa_to_pdb()} to quantify variation within
+structure-informed windows.
 }
+\keyword{internal}
