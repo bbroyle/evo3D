@@ -788,7 +788,9 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
       interface_chain = interface_chain[[pdb_name]],
       occlusion_chain = occlusion_chain[[pdb_name]],
       verbose = verbose - 1, # reduce by one level
-      detail_level = detail_level
+      # edit 3/6/26 -- collapse_to_codon() needs dist mat #
+      #detail_level = detail_level
+      detail_level = 2
     )
 
     # rub pdb_to_patch() with the gathered chains #

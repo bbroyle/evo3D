@@ -75,7 +75,7 @@ write_patch_fastas = function(msa_subsets, output_dir = "patch_fastas") {
 }
 
 
-# .write_stat_to_pdb() ----
+# write_stat_to_pdb() ----
 
 #' Write selection statistics to PDB B-factors and occupancy
 #'
