@@ -1,152 +1,81 @@
-# evo3D
+# <img src="man/figures/evo3d_hex_b.png" width="100"/> **Structure-informed evolutionary analysis in R**
 
-**Structure-informed evolutionary analysis in R**
+evo3D is a newly released package. If you encounter issues, have suggestions, 
+or would like to request new features, please open an issue - community feedback is appreciated.
 
-evo3D is a newly released package.  
-If you encounter issues, have suggestions, or would like to request new features, please open an issue - community feedback is appreciated.
-
-<img src="man/figures/evo3d_hex_b.png" width="200"/>
-
-An R package for structure-informed evolutionary analysis that links multiple-sequence alignments to 3D protein structures and returns spatially defined sequence windows (“patches”) for downstream population-genetic and evolutionary statistics. evo3D supports surface-, interface-, and multimer-aware analyses and is designed for flexible, end-to-end workflows via a single wrapper, with modular functions exposed for advanced use.
+The package automates the mapping of multiple sequence alignments (MSAs) to protein structures (PDBs), generates 3D sliding windows across the structure, converts structural windows into codon-indexed windows, and subsets MSAs accordingly. These subsets (_spatial haplotypes_) are returned to users along with the codon-indexed windows, enabling flexible user-defined downstream analyses.
 
 ---
-## Key Features
+<img src="man/figures/workflow_overview.png" width="800"/>
 
-- External-dependency-free R package with cross-platform support
-- Links nucleotide or protein MSAs to 3D structures and extracts spatially defined sequence windows (“patches”)
-- Patch definitions support surface exposure, protein–protein interfaces, multimeric assemblies, and homomultimer merging
-- Returns patch-level MSAs (“spatial haplotypes”) for arbitrary downstream evolutionary or population-genetic analyses
-- Includes built-in calculations for site- and patch-level statistics (e.g., entropy, nucleotide diversity, haplotype diversity, Tajima’s D)
-- Explicit and inspectable MSA–structure alignment, enabling user validation and correction
-- Supports integration across multiple structural models and multiple MSAs
-- Exports results to tabular formats and maps statistics to PDB B- and Q-factor fields for direct structural visualization
----
+evo3D workflow and spatial haplotype extraction.
 
-## Installation
+(A) Inputs are a multiple sequence alignment (MSA) (nucleotide or amino acid) and a PDB/mmCIF structure (single chain or complex). In the example of user inputs, two gene MSA’s correspond to one protein complex. run_evo3d() automatically maps structure chains to MSAs, defines 3D neighborhoods (patches), aligns the PDB sequence to the MSA, and computes spatial haplotype statistics. Outputs include an MSA-PDB mapping table, spatial haplotypes (MSA subsets) (optionally written to file), and selection maps projected onto the structure. (B) Spatial haplotypes are constructed by (1) defining a 3D neighborhood around a centroid residue (tunable parameters control neighborhood definition); (2) propagating residue positions to codon positions via the PDB→MSA map; and (3) extracting and concatenating those MSA columns to generate spatial haplotypes. Abbreviations: aa, amino acid; nt, nucleotide.
 
-To install the latest version from GitHub:
-
+## Installation Instructions
 ```r
-# (Optional) Remove any previously installed version
-if ("evo3D" %in% rownames(installed.packages())) {
-  remove.packages("evo3D")
-}
-
 # 1. Install evo3D (and devtools if needed)
 if (!requireNamespace("devtools", quietly = TRUE)) {
   install.packages("devtools")
 }
+
 devtools::install_github("bbroyle/evo3D")
 
 # 2. Install msa (used for MSA–structure alignment)
-# Note: this package can take some time to install
-# and may be replaced by DECIPHER, Biostrings, or simple pairwise alignment in the future
+# ! Note: this package can take some time to install !
 if (!requireNamespace("BiocManager", quietly = TRUE)) {
   install.packages("BiocManager")
 }
+
 BiocManager::install("msa", update = FALSE)
 ```
 
-## Quick Example
+## Notes on file formating before running (including current issue processing AlphaFold3 outputs)
+1. The MSA file (nucleotide or protein) needs to be aligned sequences, and if nucleotide then coding strand only and in frame.
+2. The structure file can be ".pdb" or ".cif" formats. At this time AlphaFold3 ".cif" output is not processed properly (AlphaFold2 outputs are fine).
 
+   converting AlphaFold3 from .cif to .pdb fixes this issue, which can be performed online:
+   https://project-gemmi.github.io/wasm/
+
+   or locally by installing GEMMI python package (https://gemmi.readthedocs.io/en/latest/install.html)
+
+3. Non-canonical amino acids that are stored in as HETATM in the structure file are currently not included in MSA to PDB mappings, and are excluded from spatial windows.
+
+   If desired converting HETATM to ATOM will force these residues into MSA to PDB mappings (see tutorials below)
+
+
+## Quick Run
 ```r
 library(evo3D)
 
-# Example data shipped with evo3D (replace with your own)
-msa_path <- system.file("extdata", "rh5_pfalc.fasta", package = "evo3D")
-pdb_path <- system.file("extdata", "rh5_6mpv_AB.pdb", package = "evo3D")
+# example data shipped with the package #
+msa <- system.file("extdata", "rh5_pfalc.fasta", package = "evo3D")
+pdb <- system.file("extdata", "rh5_6mpv_AB.pdb", package = "evo3D")
 
-# run_evo3d() is designed for single analysis runs
-# chain = "auto" (default) handles MSA–PDB chain mapping
-results <- run_evo3d(msa_path, pdb_path, detail_level = 2)
+# adding a few statistics to be calculated *stats_controls* #
+results <- run_evo3d(msa, pdb,
+  stat_controls = list(calc_site_entropy = TRUE, calc_pi = TRUE),
+  detail_level = 2)
 
-# Codon-indexed windows corresponding to structure-informed patches
+# this data frame stores the stats, msa-pdb mapping, and codon-indexed windows #
 res_df <- results$evo3d_df
 
-# With detail_level = 2, patch-level MSA subsets ("spatial haplotypes")
-# are returned directly in R and can be used for any downstream analysis
+# each 3D window creates a subset of the MSA -- they are stored here #
 msa_subs <- results$final_msa_subsets
 
-# Optionally write patch-level MSAs to FASTA
-# Files are named by their anchoring (central) codon
+# these subsets (spatial haplotypes) can be written to file #
 write_patch_fastas(msa_subs, output_dir = "testing")
+
+# any statistics calculated could also be mapped to the structure file provided #
+write_stat_to_pdb(results, stat_name = c('site_entropy', 'pi'), outfile = 'example_run.pdb')
 ```
 
-## `run_evo3d()` output
+## Tutorials
 
-`run_evo3d()` returns a structured list with the following components:
+For detailed walkthroughs and example workflows, see the evo3D tutorials repository:
 
-- **`evo3d_df`**  
-  Data frame containing MSA–PDB alignment information, structure-defined codon patches, and any computed statistics.
+https://bbroyle.github.io/evo3D_tutorials/
 
-- **`final_msa_subsets`**  
-  List of patch-level MSA subsets (“spatial haplotypes”), named by their anchoring (central) codon.
-
-- **`msa_info_sets`**  
-  Outputs from the MSA preprocessing step (`msa_to_ref()`).
-
-- **`pdb_info_sets`**  
-  Outputs from structure parsing and patch construction (`pdb_to_patch()`).
-
-- **`aln_info_sets`**  
-  Outputs from MSA–structure alignment and patch mapping (`aln_msa_to_pdb()`).
-
-- **`call_info`**  
-  Metadata describing the analysis run, including input file paths and 3D patch parameters.
-
-
-## Tunable workflow
-
-Patch definitions and statistical analyses can be customized directly through the
-`run_evo3d()` wrapper. Below, we analyze the Hepatitis C virus E1/E2 complex,
-construct surface-defined patches, and compute Tajima’s D for each patch.
-
-```r
-library(evo3D)
-
-# Define HCV inputs
-msa_path1 <- system.file("extdata", "e1_hepc_sorted.aln", package = "evo3D")
-msa_path2 <- system.file("extdata", "e2_hepc_sorted.aln", package = "evo3D")
-pdb_path  <- system.file("extdata", "e1e2_8fsj.pdb",  package = "evo3D")
-
-# Inspect default control parameters
-show_evo3d_defaults("stat")
-show_evo3d_defaults("pdb")
-
-# Enable Tajima's D calculation
-stat_controls <- list(calc_tajima = TRUE)
-
-# Define fixed-size surface patches
-# Here: patches of 15 residues, restricted to residues with SASA ≥ 10 Å²
-pdb_controls <- list(
-  dist_cutoff = NA,
-  max_patch   = 15,
-  sasa_cutoff = 10
-)
-
-# Run evo3D on the E1/E2 complex
-results <- run_evo3d(
-  list(msa_path1, msa_path2),
-  pdb_path,
-  stat_controls = stat_controls,
-  pdb_controls  = pdb_controls
-)
-
-# Inspect patch-level results
-res_df <- results$evo3d_df
-
-# Write Tajima’s D to the PDB B-factor field for visualization
-write_to_pdb(
-  results,
-  stat_name = "tajima",
-  outfile   = "testing/hcv_tajima.pdb"
-)
-
-# In PyMOL (example):
-# select stat, b > -99
-# spectrum b, selection=stat
-
-```
 
 ## License
 
