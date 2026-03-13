@@ -71,7 +71,7 @@ write_stat_to_pdb(results, stat_name = c('site_entropy', 'pi'), outfile = 'examp
 
 For detailed walkthroughs and example workflows, see the evo3D tutorials repository:
 
-[github.com/bbroyle/evo3D-tutorials](https://github.com/bbroyle/evo3D_tutorials)
+https://bbroyle.github.io/evo3D_tutorials/
 
 
 ## License
