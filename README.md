@@ -17,10 +17,13 @@ An R package for structure-informed evolutionary analysis that links multiple-se
 - Patch definitions support surface exposure, protein–protein interfaces, multimeric assemblies, and homomultimer merging
 - Returns patch-level MSAs (“spatial haplotypes”) for arbitrary downstream evolutionary or population-genetic analyses
 - Includes built-in calculations for site- and patch-level statistics (e.g., entropy, nucleotide diversity, haplotype diversity, Tajima’s D)
-- Explicit and inspectable MSA–structure alignment, enabling user validation and correction
+- Explicit and inspectable MSA-structure alignment, enabling user validation and correction
 - Supports integration across multiple structural models and multiple MSAs
 - Exports results to tabular formats and maps statistics to PDB B- and Q-factor fields for direct structural visualization
 ---
+
+## Workflow overview
+<img src="man/figures/workflow_overview.png" width="800"/>
 
 ## Installation
 
