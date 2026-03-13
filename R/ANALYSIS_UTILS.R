@@ -210,6 +210,21 @@ run_pegas_three = function(msa, residue_df = NULL, stat = c('pi', 'tajima', 'hap
     msa = list(msa)
   }
 
+  # remove all gap sequences (breaks pegas) #
+  msa = lapply(msa, function(x) {
+    keep = apply(x, 1, function(y) !all(y == '-'))
+    x[keep, , drop = FALSE]
+  })
+
+  # remove any entries that now have no remaining sequences #
+  msa = msa[sapply(msa, nrow) > 0]
+
+  # if all were empty - skip pegas
+  if (length(msa) == 0) {
+    message("All MSA Subsets were empty after removing all-gap sequences. Skipping pegas stats.")
+    return(residue_df)
+  }
+
   # Now everything is a list - one code path!
   seqs = ape::as.DNAbin.list(msa)
 
