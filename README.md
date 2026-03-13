@@ -7,7 +7,10 @@ The package automates the mapping of multiple sequence alignments (MSAs) to prot
 
 ---
 <img src="man/figures/workflow_overview.png" width="800"/>
-The package is organized into modules that implement different stages of the structure-informed workflow. The run_evo3d() wrapper function orchestrates these modules and supports a wide range of inputs, including nucleotide or protein MSAs, monomeric or multimeric protein structures, and multiple options for defining spatial windows.
+
+evo3D workflow and spatial haplotype extraction.
+
+(A) Inputs are a multiple sequence alignment (MSA) (nucleotide or amino acid) and a PDB/mmCIF structure (single chain or complex). In the example of user inputs, two gene MSA’s correspond to one protein complex. run_evo3d() automatically maps structure chains to MSAs, defines 3D neighborhoods (patches), aligns the PDB sequence to the MSA, and computes spatial haplotype statistics. Outputs include an MSA-PDB mapping table, spatial haplotypes (MSA subsets) (optionally written to file), and selection maps projected onto the structure. (B) Spatial haplotypes are constructed by (1) defining a 3D neighborhood around a centroid residue (tunable parameters control neighborhood definition); (2) propagating residue positions to codon positions via the PDB→MSA map; and (3) extracting and concatenating those MSA columns to generate spatial haplotypes. Abbreviations: aa, amino acid; nt, nucleotide.
 
 ## Installation Instructions
 ```r
