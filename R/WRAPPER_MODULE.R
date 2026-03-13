@@ -26,7 +26,7 @@
       use_rsa_sasa = 'or',         # if both provided how to use have to be X and Y or x or Y
       only_exposed_in_patch = TRUE,      # seed is exposed but patch can be also buried (complicated)
       max_patch = NA,            # max aa in patch -- better name is fixed_count
-      interface_dist_cutoff = 5,    # interface dist cut -- (can include buried residues)
+      interface_dist_cutoff = 4,    # interface dist cut -- (can include buried residues)
       force_file_type = NULL, # can be pdb or cif -- only works for one -- should it be multi
       patch_mode = 'codon'  # will codons be duplicated and count as residues or should codons define windows -- used in rebuild_patches()
     ),
