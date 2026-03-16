@@ -866,9 +866,9 @@ run_evo3d = function(msa, pdb, chain = 'auto', interface_chain = NA, occlusion_c
     output_controls = call_info$output_controls
     collapse_controls = call_info$collapse_controls
 
-    # grab previous verbose and detail #
+    # grab previous verbose and detail_level #
     verbose = call_info$verbose
-    detail_level = call_info$detail
+    detail_level = call_info$detail_level
 
     # store user_aln #
     user_aln = restart_run$aln_info_sets
