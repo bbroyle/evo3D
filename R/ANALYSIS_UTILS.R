@@ -122,8 +122,8 @@ write_stat_to_pdb = function(evo3d_results, pdb_id = 'pdb1', stat_name = 'tajima
     stop("stat_name must be a character vector of length 1 or 2")
   }
 
-  if (!is.numeric(adjust_NA_stats) || length(adjust_NA_stats) != 1 || is.na(adjust_NA_stats)) {
-    stop("adjust_NA_stats must be a single numeric value")
+  if (length(adjust_NA_stats) != 1) {
+    stop("adjust_NA_stats must be a single value or NA")
   }
 
   # --- avoid overwrite ---
@@ -132,6 +132,10 @@ write_stat_to_pdb = function(evo3d_results, pdb_id = 'pdb1', stat_name = 'tajima
     ext  = tools::file_ext(outfile)
     tag  = format(Sys.time(), "%Y%m%d%H%M%S")
     outfile2 = if (nzchar(ext)) paste0(base, "_", tag, ".", ext) else paste0(base, "_", tag)
+
+    # replace any spaces with '_' #
+    outfile2 = gsub(' ', '_', outfile2)
+
     message(outfile, " already exists, saving to: ", outfile2)
     outfile = outfile2
   }
@@ -143,6 +147,26 @@ write_stat_to_pdb = function(evo3d_results, pdb_id = 'pdb1', stat_name = 'tajima
 
   pdb = evo3d_results$pdb_info_sets[[pdb_id]]$pdb
   patch_df = evo3d_results$evo3d_df
+
+  # --- when codon collapse mode was on in analysis --- #
+  # --- expand back out the columns (residue_id, stat_name(s), pdb) --- #
+  col = paste0(pdb_id, '_residue_id')
+  if(col %in% colnames(patch_df)){
+
+    # overwrite patch_df with the expected format (pdb, residue_id, stat_...) #
+    new_patch_df = list()
+    for(i in seq_len(nrow(patch_df))){
+      resi = strsplit(patch_df[[col]][i], '\\+')[[1]]
+      df = data.frame(pdb = pdb_id,
+                      residue_id = resi)
+      df[stat_name] = patch_df[i, stat_name]
+      new_patch_df[[i]] = df
+    }
+
+    patch_df = do.call(rbind, new_patch_df)
+
+  }
+
   patch_df = patch_df[patch_df$pdb == pdb_id,]
 
   # --- #
@@ -152,6 +176,8 @@ write_stat_to_pdb = function(evo3d_results, pdb_id = 'pdb1', stat_name = 'tajima
     chain = chain[!is.na(chain)]
     pdb = bio3d::trim.pdb(pdb, chain = chain)
   }
+
+
 
   # use residue id (resno_chain_ins) to match to pdb #
   pdb$atom$b = patch_df[match(pdb$atom$residue_id, patch_df$residue_id), stat_name[1]]
@@ -171,8 +197,6 @@ write_stat_to_pdb = function(evo3d_results, pdb_id = 'pdb1', stat_name = 'tajima
   invisible(outfile)
 
 }
-
-
 
 # run_pegas_three() ----
 
