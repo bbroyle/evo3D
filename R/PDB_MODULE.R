@@ -709,6 +709,10 @@
   idx = match(seeds$residue_id, residue_df$residue_id)
   ok  = !is.na(idx)
 
+  residue_df$patch = NA_character_
+  residue_df$patch_len = NA_integer_
+  residue_df$max_dist = NA_real_
+
   residue_df$patch[idx] = seeds$patch
   residue_df$patch_len[idx] = seeds$patch_len
   residue_df$max_dist[idx] = seeds$max_dist
